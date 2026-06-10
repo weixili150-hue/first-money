@@ -53,7 +53,7 @@ async function cancelActivation(apiKey, activationId) {
   return result;
 }
 
-// 查价格
+// 查价格（返回价位数组，如 [{count:1, price:0.015}, {count:2, price:0.02}]）
 async function getPrices(apiKey, { service, country }) {
   const result = await call(apiKey, {
     action: 'getPrices',
@@ -63,10 +63,46 @@ async function getPrices(apiKey, { service, country }) {
   return result;
 }
 
+// 解析 getPrices 返回值，提取价位列表
+function parsePrices(raw, maxPrice) {
+  const prices = [];
+  if (!raw || raw === 'NO_NUMBERS') return prices;
+  try {
+    // 尝试 JSON 格式
+    const json = JSON.parse(raw);
+    // JSON 格式可能嵌套：{"33":{"dr":{"1":0.015, ...}}}
+    for (const countryData of Object.values(json)) {
+      for (const serviceData of Object.values(countryData)) {
+        for (const [count, price] of Object.entries(serviceData)) {
+          const p = parseFloat(price);
+          if (p > 0 && p <= maxPrice + 0.001) {
+            prices.push({ price: p, count: parseInt(count) || 1 });
+          }
+        }
+      }
+    }
+    if (prices.length > 0) return prices;
+  } catch (e) { /* Not JSON, try text format */ }
+
+  // 文本格式：price1:count1;price2:count2
+  // 或：price1,count1:price2,count2
+  const parts = raw.split(/[;,]/);
+  for (const part of parts) {
+    const segs = part.split(':');
+    const price = parseFloat(segs[0]);
+    const count = segs[1] ? parseInt(segs[1]) : 1;
+    if (price > 0 && price <= maxPrice + 0.001) {
+      prices.push({ price, count });
+    }
+  }
+  return prices;
+}
+
 module.exports = {
   getBalance,
   getNumber,
   getStatus,
   cancelActivation,
   getPrices,
+  parsePrices,
 };

@@ -68,6 +68,23 @@ td { color: #ccc; }
 .success-text { color: #4cff4c; font-size: 13px; margin-top: 8px; }
 .error-text { color: #e74c3c; font-size: 13px; margin-top: 8px; }
 
+.country-row { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+.country-row select { flex: 1; padding: 8px; background: #111; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 13px; }
+.country-row input { width: 80px; padding: 8px; background: #111; border: 1px solid #333; border-radius: 6px; color: #fff; font-size: 13px; text-align: center; }
+.country-row .btn-del { background: #3a1a1a; color: #e74c3c; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 13px; }
+.country-row .btn-del:hover { background: #5a1a1a; }
+
+.stats-table { width:100%; border-collapse:collapse; font-size:12px; }
+.stats-table th, .stats-table td { padding:6px 8px; border-bottom:1px solid #2a2a2a; text-align:center; }
+.stats-table th { color:#999; font-size:11px; }
+.stats-table .rate-good { color:#4cff4c; }
+.stats-table .rate-mid { color:#f0a040; }
+.stats-table .rate-bad { color:#e74c3c; }
+.stat-grid { display:flex; gap:12px; flex-wrap:wrap; }
+.stat-item { flex:1; min-width:80px; background:#111; border-radius:8px; padding:12px; text-align:center; }
+.stat-item .num { font-size:24px; font-weight:700; color:#fff; }
+.stat-item .label { font-size:11px; color:#888; margin-top:4px; }
+
 .error-toast {
   position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
   background: #c0392b; color: #fff; padding: 12px 24px;
@@ -101,17 +118,12 @@ td { color: #ccc; }
       </div>
       <div class="input-row">
         <label>服务代码</label>
-        <input type="text" id="serviceInput" placeholder="如 op (OpenAI)">
+        <input type="text" id="serviceInput" placeholder="如 dr (OpenAI)">
       </div>
-      <div class="input-row">
-        <label>国家 ID</label>
-        <input type="number" id="countryInput" placeholder="如 2 (哈萨克斯坦)">
-      </div>
-      <div class="input-row">
-        <label>最高价格($)</label>
-        <input type="number" id="priceInput" placeholder="如 0.5" step="0.01">
-      </div>
-      <button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+      <div style="margin-top:12px;font-size:13px;color:#999;margin-bottom:8px;">国家列表（按价格从低到高依次尝试）</div>
+      <div id="countriesList"></div>
+      <button class="btn btn-outline btn-sm" onclick="addCountry()" style="width:auto;margin-top:8px;">+ 添加国家</button>
+      <button class="btn btn-primary" onclick="saveConfig()" style="margin-top:12px;">保存配置</button>
       <div id="configMsg"></div>
     </div>
 
@@ -136,6 +148,21 @@ td { color: #ccc; }
       <div id="ordersTable"></div>
       <div style="margin-top:12px;">
         <button class="btn btn-outline btn-sm" onclick="loadOrders()">刷新</button>
+      </div>
+    </div>
+
+    <!-- 数据监控 -->
+    <div class="card">
+      <h2>📊 数据监控</h2>
+      <div id="statsOverview" style="margin-bottom:12px;"></div>
+      <h3 style="font-size:13px;color:#999;margin:12px 0 8px;">国家 × 价位成交量</h3>
+      <div id="statsByCountry" style="overflow-x:auto;"></div>
+      <h3 style="font-size:13px;color:#999;margin:12px 0 8px;">近期失败记录</h3>
+      <div id="statsFailures" style="overflow-x:auto;"></div>
+      <h3 style="font-size:13px;color:#999;margin:12px 0 8px;">换号次数分布</h3>
+      <div id="statsReplace"></div>
+      <div style="margin-top:12px;">
+        <button class="btn btn-outline btn-sm" onclick="loadStats()">刷新数据</button>
       </div>
     </div>
 
@@ -172,9 +199,54 @@ async function doLogin() {
     $('mainContent').classList.remove('hidden');
     loadConfig();
     loadOrders();
+    loadStats();
   } else {
     showToast('密码错误');
   }
+}
+
+// 可用国家列表
+const ALL_COUNTRIES = [
+  { id: 33, name: '哥伦比亚 (+57)', price: 0.05 },
+  { id: 2,  name: '哈萨克斯坦 (+7)', price: 0.05 },
+  { id: 12, name: '印度尼西亚 (+62)', price: 0.06 },
+  { id: 6,  name: '菲律宾 (+63)', price: 0.06 },
+  { id: 3,  name: '越南 (+84)', price: 0.06 },
+  { id: 16, name: '马来西亚 (+60)', price: 0.07 },
+  { id: 43, name: '英国 (+44)', price: 0.10 },
+  { id: 22, name: '泰国 (+66)', price: 0.08 },
+  { id: 11, name: '巴西 (+55)', price: 0.08 },
+  { id: 14, name: '肯尼亚 (+254)', price: 0.10 },
+  { id: 42, name: '墨西哥 (+52)', price: 0.10 },
+  { id: 34, name: '阿根廷 (+54)', price: 0.08 },
+];
+
+let currentCountries = [];
+
+function renderCountries() {
+  let html = '';
+  currentCountries.forEach((c, i) => {
+    const opts = ALL_COUNTRIES.map(ac =>
+      `<option value="${ac.id}" ${ac.id == c.country_id ? 'selected' : ''}>${ac.name}</option>`
+    ).join('');
+    html += `<div class="country-row">
+      <select onchange="currentCountries[${i}].country_id=parseInt(this.value)">${opts}</select>
+      <span style="color:#999;font-size:12px;">最高$</span>
+      <input type="number" value="${c.max_price}" step="0.01" min="0.01" onchange="currentCountries[${i}].max_price=parseFloat(this.value)">
+      <button class="btn-del" onclick="removeCountry(${i})">✕</button>
+    </div>`;
+  });
+  $('countriesList').innerHTML = html || '<div style="color:#555;font-size:13px;">暂未添加国家</div>';
+}
+
+function addCountry() {
+  currentCountries.push({ country_id: 33, max_price: 0.05 });
+  renderCountries();
+}
+
+function removeCountry(i) {
+  currentCountries.splice(i, 1);
+  renderCountries();
 }
 
 async function loadConfig() {
@@ -182,8 +254,16 @@ async function loadConfig() {
     const res = await api('/api/admin/config');
     $('apiKeyInput').value = res.hero_api_key || '';
     $('serviceInput').value = res.service_code || '';
-    $('countryInput').value = res.country_id || '';
-    $('priceInput').value = res.max_price || '';
+    // 加载多国配置
+    if (res.countries_config && Array.isArray(res.countries_config) && res.countries_config.length > 0) {
+      currentCountries = res.countries_config;
+    } else if (res.country_id > 0) {
+      // 兼容旧单国配置
+      currentCountries = [{ country_id: res.country_id, max_price: res.max_price }];
+    } else {
+      currentCountries = [];
+    }
+    renderCountries();
   } catch(e) {}
 }
 
@@ -191,8 +271,9 @@ async function saveConfig() {
   const res = await api('/api/admin/config', {
     hero_api_key: $('apiKeyInput').value,
     service_code: $('serviceInput').value,
-    country_id: parseInt($('countryInput').value) || 0,
-    max_price: parseFloat($('priceInput').value) || 0,
+    country_id: currentCountries.length > 0 ? currentCountries[0].country_id : 0,
+    max_price: currentCountries.length > 0 ? currentCountries[0].max_price : 0,
+    countries_config: currentCountries,
   });
   const msg = $('configMsg');
   if (res.error) {
@@ -253,6 +334,53 @@ async function loadOrders() {
   }
   html += '</tbody></table>';
   $('ordersTable').innerHTML = html;
+}
+
+async function loadStats() {
+  try {
+    const res = await api('/api/admin/stats');
+    if (res.error) return;
+
+    // 总览
+    const o = res.overview || {};
+    $('statsOverview').innerHTML = `<div class="stat-grid">
+      <div class="stat-item"><div class="num">${o.total_used||0}</div><div class="label">总成交量</div></div>
+      <div class="stat-item"><div class="num" style="color:#4cff4c;">${o.total_success||0}</div><div class="label">成功收码</div></div>
+      <div class="stat-item"><div class="num" style="color:#f0a040;">${o.total_active||0}</div><div class="label">等待中</div></div>
+      <div class="stat-item"><div class="num">$${(o.total_spent||0).toFixed(2)}</div><div class="label">总花费</div></div>
+      <div class="stat-item"><div class="num">${o.countries_used||0}</div><div class="label">使用国家数</div></div>
+    </div>`;
+
+    // 国家×价位
+    let html = '<table class="stats-table"><thead><tr><th>国家</th><th>价位</th><th>成交量</th><th>收码</th><th>成功率</th><th>等待中</th><th>空闲</th></tr></thead><tbody>';
+    for (const r of res.byCountry || []) {
+      const cls = r.success_rate >= 70 ? 'rate-good' : r.success_rate >= 40 ? 'rate-mid' : 'rate-bad';
+      html += `<tr>
+        <td>${r.country_name}</td><td>$${r.price}</td><td>${r.total}</td>
+        <td>${r.got_code}</td><td class="${cls}">${r.success_rate}%</td>
+        <td>${r.waiting}</td><td>${r.idle}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    $('statsByCountry').innerHTML = html || '<div style="color:#555;">暂无数据</div>';
+
+    // 失败记录
+    html = '<table class="stats-table"><thead><tr><th>国家</th><th>价位</th><th>类型</th><th>次数</th></tr></thead><tbody>';
+    for (const r of res.failures || []) {
+      html += `<tr><td>${r.country_name}</td><td>$${r.price}</td><td>${r.type_name}</td><td>${r.count}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    $('statsFailures').innerHTML = html || '<div style="color:#555;">暂无失败记录</div>';
+
+    // 换号分布
+    html = '';
+    const labels = {1:'换过1次',2:'换过2次',3:'换过3次'};
+    for (const r of res.replaceDist || []) {
+      html += `<span style="display:inline-block;background:#1a1a1a;border-radius:6px;padding:4px 10px;margin:2px;font-size:12px;">${labels[r.replace_count]||('换'+r.replace_count+'次')}: <b style="color:#f0a040;">${r.count}</b> 张</span>`;
+    }
+    $('statsReplace').innerHTML = html || '<div style="color:#555;">暂无</div>';
+
+  } catch(e) { console.error(e); }
 }
 </script>
 </body>

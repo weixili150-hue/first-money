@@ -14,15 +14,164 @@ const {
   pollForCode,
   handleTimeout,
   requestReplaceNumber,
+  processPendingRefunds,
+  autoRefundIdleCards,
   COOLDOWN_MS,
 } = require('./card-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+
+// 国家信息映射
+const COUNTRIES = {
+  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
+  2:  { flag: '🇰🇿', name: '哈萨克斯坦', code: '+7' },
+  12: { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
+  6:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
+  3:  { flag: '🇻🇳', name: '越南', code: '+84' },
+  16: { flag: '🇲🇾', name: '马来西亚', code: '+60' },
+  22: { flag: '🇹🇭', name: '泰国', code: '+66' },
+  11: { flag: '🇧🇷', name: '巴西', code: '+55' },
+  14: { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
+  9:  { flag: '🇪🇬', name: '埃及', code: '+20' },
+};
+
+function getCountryInfo(countryId) {
+  return COUNTRIES[countryId] || { flag: '🌍', name: '未知国家', code: '' };
+}
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---- 演示模式 ----
+if (DEMO_MODE) {
+  console.log('🎭 演示模式已开启 - 不会真实购买手机号');
+
+  // 模拟数据存储
+  const demoStore = new Map();
+
+  app.post('/api/redeem', (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: '请输入卡密' });
+    const card = getCardByCode(code.trim().toUpperCase());
+    if (!card) return res.json({ success: false, error: '卡密不存在' });
+
+    // 已完成 → 返回验证码
+    if (card.status === 'completed' && card.sms_code) {
+      const countryInfo = getCountryInfo(card.country_id || 33);
+      return res.json({ success: true, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, country: countryInfo });
+    }
+
+    // 活跃中 → 恢复
+    if (card.status === 'active' && card.phone_number) {
+      const elapsed = card.purchased_at ? Date.now() - new Date(card.purchased_at).getTime() : 0;
+      if (elapsed < 600000) {
+        const countryInfo = getCountryInfo(card.country_id || 33);
+        return res.json({ success: true, resumed: true, phoneNumber: card.phone_number, verifyStarted: !!card.verify_started_at, country: countryInfo });
+      }
+      // 过期了，重置
+      const db = require('./db');
+      db.updateCard(card.id, { status: 'unused', activation_id: null, phone_number: null, sms_code: null, purchased_at: null, used_at: null, verify_started_at: null });
+      card.status = 'unused';
+    }
+
+    if (card.status !== 'unused') return res.json({ success: false, error: '卡密已被使用' });
+
+    // 从配置中选一个国家（演示模式优先用第一个）
+    const config = getConfig();
+    let countryId = config.country_id || 33;
+    let countryPrefix = '+57';
+    if (config.countries_config && Array.isArray(config.countries_config) && config.countries_config.length > 0) {
+      countryId = config.countries_config[0].country_id;
+    }
+    const countryInfo = getCountryInfo(countryId);
+    countryPrefix = countryInfo.code;
+
+    const phoneNumber = countryPrefix + ' 3' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0');
+    demoStore.set(code.trim().toUpperCase(), {
+      phoneNumber,
+      purchasedAt: Date.now(),
+      smsCode: Math.floor(100000 + Math.random() * 900000).toString(),
+    });
+
+    // 更新数据库（不调 HeroSMS）
+    const db = require('./db');
+    const c = db.getCardByCode(code.trim().toUpperCase());
+    db.updateCard(c.id, {
+      status: 'active',
+      activation_id: 'demo_' + Date.now(),
+      phone_number: phoneNumber,
+      country_id: countryId,
+      price: (config.countries_config && config.countries_config.length > 0) ? config.countries_config[0].max_price : (config.max_price || 0.05),
+      purchased_at: new Date().toISOString(),
+      used_at: new Date().toISOString(),
+    });
+
+    res.json({ success: true, phoneNumber, activationId: 'demo_id', country: countryInfo });
+  });
+
+  app.get('/api/status/:code', (req, res) => {
+    const data = demoStore.get(req.params.code);
+    if (!data) return res.json({ success: false, waiting: false, status: '无记录' });
+
+    const elapsed = Date.now() - data.purchasedAt;
+    // 演示模式：5秒后自动发验证码
+    if (elapsed > 5000) {
+      const card = getCardByCode(req.params.code);
+      const countryInfo = getCountryInfo(card ? card.country_id : 33);
+      return res.json({ success: true, smsCode: data.smsCode, phoneNumber: data.phoneNumber, country: countryInfo });
+    }
+    res.json({ success: false, waiting: true, status: 'STATUS_WAIT_CODE' });
+  });
+
+  app.get('/api/cooldown/:code', (req, res) => {
+    res.json({ cooldownRemaining: 0 });
+  });
+
+  app.post('/api/replace', (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: '缺少卡密' });
+    const card = getCardByCode(code.trim().toUpperCase());
+    if (!card || !card.activation_id) return res.json({ success: false, error: '无激活记录' });
+
+    // 换号次数限制
+    const replaceCount = card.replace_count || 0;
+    if (replaceCount >= 3) {
+      return res.json({ success: false, error: '该卡密已更换多次，请联系客服处理' });
+    }
+
+    const config = getConfig();
+    let countryId = config.country_id || 33;
+    let prefix = '+57';
+    if (config.countries_config && Array.isArray(config.countries_config) && config.countries_config.length > 0) {
+      countryId = config.countries_config[0].country_id;
+    }
+    const ci = getCountryInfo(countryId);
+    prefix = ci.code;
+
+    const newPhone = prefix + ' 3' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0');
+    demoStore.set(code.trim().toUpperCase(), {
+      phoneNumber: newPhone,
+      purchasedAt: Date.now(),
+      smsCode: Math.floor(100000 + Math.random() * 900000).toString(),
+    });
+
+    const db = require('./db');
+    db.updateCard(card.id, {
+      activation_id: 'demo_' + Date.now(),
+      phone_number: newPhone,
+      country_id: countryId,
+      price: (config.countries_config && config.countries_config.length > 0) ? config.countries_config[0].max_price : (config.max_price || 0.05),
+      replace_count: replaceCount + 1,
+      sms_code: null,
+      purchased_at: new Date().toISOString(),
+    });
+
+    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: ci });
+  });
+}
 
 // ---- 管理后台鉴权中间件 ----
 function requireAdmin(req, res, next) {
@@ -90,6 +239,17 @@ app.post('/api/timeout', async (req, res) => {
   }
 });
 
+// 标记用户已点击"我已发送验证码"
+app.post('/api/verify-started', (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: '缺少卡密' });
+  const card = getCardByCode(code.trim().toUpperCase());
+  if (!card) return res.json({ success: false, error: '卡密不存在' });
+  const { setVerifyStarted } = require('./db');
+  setVerifyStarted(card.id);
+  res.json({ success: true });
+});
+
 // ---- 管理后台 API ----
 
 // 登录验证
@@ -106,15 +266,16 @@ app.get('/api/admin/config', requireAdmin, (req, res) => {
 
 // 更新配置
 app.post('/api/admin/config', requireAdmin, (req, res) => {
-  const { hero_api_key, service_code, country_id, max_price } = req.body;
-  if (!hero_api_key || !service_code || !country_id || max_price === undefined) {
-    return res.status(400).json({ error: '所有字段均为必填' });
+  const { hero_api_key, service_code, country_id, max_price, countries_config } = req.body;
+  if (!hero_api_key || !service_code) {
+    return res.status(400).json({ error: 'API Key 和服务代码为必填' });
   }
   const config = updateConfig({
     hero_api_key,
     service_code,
-    country_id: parseInt(country_id),
-    max_price: parseFloat(max_price),
+    country_id: parseInt(country_id) || 0,
+    max_price: parseFloat(max_price) || 0,
+    countries_config: countries_config || undefined,
   });
   res.json(config);
 });
@@ -152,6 +313,104 @@ app.get('/api/admin/cards/export', requireAdmin, (req, res) => {
   res.send(text);
 });
 
+// 数据统计
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  const db = require('./db');
+  const d = db.getDb();
+
+  // 国家+价位维度成交量
+  const byCountry = d.prepare(`
+    SELECT country_id, price,
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as got_code,
+      SUM(CASE WHEN status = 'active' AND verify_started_at IS NOT NULL THEN 1 ELSE 0 END) as waiting,
+      SUM(CASE WHEN status = 'active' AND verify_started_at IS NULL THEN 1 ELSE 0 END) as idle
+    FROM cards WHERE status IN ('active','completed') AND country_id IS NOT NULL
+    GROUP BY country_id, price ORDER BY total DESC
+  `).all();
+
+  // 价位失败统计（最近7天）
+  const failures = d.prepare(`
+    SELECT country_id, price, failure_type, COUNT(*) as count
+    FROM country_failures
+    WHERE created_at >= datetime('now', '-7 days')
+    GROUP BY country_id, price, failure_type
+    ORDER BY count DESC
+  `).all();
+
+  // 换号次数分布
+  const replaceDist = d.prepare(`
+    SELECT replace_count, COUNT(*) as count
+    FROM cards WHERE replace_count > 0
+    GROUP BY replace_count ORDER BY replace_count
+  `).all();
+
+  // 总览
+  const overview = d.prepare(`
+    SELECT
+      COUNT(*) as total_used,
+      SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as total_success,
+      SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as total_active,
+      SUM(COALESCE(price, 0)) as total_spent,
+      COUNT(DISTINCT country_id) as countries_used
+    FROM cards WHERE status IN ('active','completed')
+  `).get();
+
+  // 退款统计
+  const refunds = d.prepare(`
+    SELECT status, COUNT(*) as count FROM pending_refunds GROUP BY status
+  `).all();
+
+  // 国家名称映射
+  const countryMap = {
+    33:'哥伦比亚',2:'哈萨克斯坦',12:'印度尼西亚',6:'菲律宾',
+    3:'越南',16:'马来西亚',22:'泰国',11:'巴西',14:'肯尼亚',
+    9:'埃及',43:'英国',21:'印度',42:'墨西哥',34:'阿根廷',19:'尼日利亚'
+  };
+
+  res.json({
+    overview,
+    byCountry: byCountry.map(r => ({
+      ...r,
+      country_name: countryMap[r.country_id] || ('国家'+r.country_id),
+      success_rate: r.total > 0 ? Math.round(r.got_code / r.total * 100) : 0
+    })),
+    failures: failures.map(r => ({
+      ...r,
+      country_name: countryMap[r.country_id] || ('国家'+r.country_id),
+      type_name: { no_numbers:'售罄', unavailable:'不可用', no_code:'未收到码' }[r.failure_type] || r.failure_type
+    })),
+    replaceDist,
+    refunds,
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`First Money 运行在 http://localhost:${PORT}`);
 });
+
+// 后台定时处理延迟退款（每 15 秒检查一次）
+setInterval(async () => {
+  try {
+    await processPendingRefunds();
+  } catch (e) {
+    // 静默处理，避免崩溃
+  }
+}, 15000);
+
+// 后台定时处理空闲卡退款（每 60 秒检查一次）
+setInterval(async () => {
+  try {
+    await autoRefundIdleCards();
+  } catch (e) {
+    // 静默处理，避免崩溃
+  }
+}, 60000);
+
+// 后台清理旧数据（每 1 小时）
+setInterval(() => {
+  try {
+    const db = require('./db');
+    db.getDb().prepare("DELETE FROM country_failures WHERE created_at < datetime('now', '-24 hours')").run();
+  } catch (e) { /* 静默 */ }
+}, 3600000);

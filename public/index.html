@@ -52,6 +52,12 @@ body {
 .btn-primary:hover:not(:disabled) { background: #3d8bfd; }
 .btn-danger { background: #444; }
 .btn-danger:hover:not(:disabled) { background: #555; }
+.btn-warn {
+  background: #5a3a0a; border: 1px solid #8a5a1a;
+  color: #f0a040;
+}
+.btn-warn:hover:not(:disabled) { background: #6a4a1a; }
+.btn-sm { padding: 8px 16px; font-size: 13px; width: auto; }
 
 /* 手机号显示 */
 .phone-box {
@@ -62,7 +68,33 @@ body {
   font-size: 32px; font-weight: 700; color: #4f9cff;
   letter-spacing: 1px; word-break: break-all; user-select: all;
 }
-.phone-hint { font-size: 13px; color: #777; margin-top: 8px; }
+.phone-hint { font-size: 13px; color: #777; margin-top: 12px; line-height: 1.6; }
+
+.btn-copy {
+  background: none; border: 1px solid #333; border-radius: 6px;
+  padding: 6px 8px; cursor: pointer; display: flex; align-items: center;
+  flex-shrink: 0; transition: border-color 0.2s;
+}
+.btn-copy:hover { border-color: #4f9cff; }
+.btn-copy:active { background: #1a1a1a; }
+
+/* 可点击放大的图片 */
+.img-zoom {
+  cursor: zoom-in; transition: opacity 0.2s;
+}
+.img-zoom:hover { opacity: 0.85; }
+
+/* 图片灯箱 */
+.lightbox {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.92); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+  cursor: zoom-out; padding: 20px;
+}
+.lightbox img {
+  max-width: 100%; max-height: 100%;
+  border-radius: 8px; object-fit: contain;
+}
 
 /* 验证码显示 */
 .code-box {
@@ -79,10 +111,42 @@ body {
 .status-text.waiting { color: #f0a040; }
 .status-text.success { color: #4cff4c; }
 
-.hidden { display: none; }
+.hidden { display: none !important; }
 .section { margin-top: 16px; }
 .btn-row { display: flex; gap: 10px; margin-top: 12px; }
 .btn-row .btn { flex: 1; }
+
+/* 倒计时 */
+.countdown-display {
+  font-size: 48px; font-weight: 700; color: #f0a040;
+  margin: 12px 0; font-variant-numeric: tabular-nums;
+}
+.countdown-hint { font-size: 12px; color: #666; margin-bottom: 16px; }
+
+/* 确认弹窗 */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7); z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.2s;
+}
+.modal-box {
+  background: #1a1a1a; border: 1px solid #333; border-radius: 12px;
+  padding: 24px; max-width: 340px; margin: 20px;
+  text-align: center;
+}
+.modal-box .btn-row { margin-top: 16px; }
+.modal-box .btn { padding: 10px; font-size: 14px; }
+
+/* 账号异常报告区 */
+.issue-box {
+  background: transparent; border: 1px dashed #2a2a2a;
+  border-radius: 8px; padding: 12px; margin-top: 24px;
+}
+.issue-text {
+  font-size: 12px; color: #c0a040; margin-bottom: 8px;
+  line-height: 1.6; text-align: center;
+}
 
 .error-toast {
   position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
@@ -96,7 +160,6 @@ body {
 <body>
 <div class="container">
   <div class="header">
-    <h1>First Money</h1>
     <p>输入您的兑换码以获取验证服务</p>
   </div>
 
@@ -113,15 +176,52 @@ body {
   <div class="card hidden" id="phoneCard">
     <div class="phone-box">
       <div style="font-size:12px;color:#777;margin-bottom:4px;">您的手机号</div>
-      <div class="phone-number" id="phoneDisplay">---</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div class="phone-number" id="phoneDisplay" style="flex:1;">---</div>
+        <button class="btn-copy" onclick="copyPhone()" title="复制手机号">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+      <div id="countryBadge" style="display:inline-flex;align-items:center;gap:4px;margin-top:8px;background:#111;border:1px solid #333;border-radius:6px;padding:4px 10px;font-size:12px;color:#ccc;">
+        🇨🇴 哥伦比亚 (+57)
+      </div>
     </div>
-    <div class="phone-hint">请将此号码输入到验证页面</div>
+    <div class="phone-hint" id="phoneHint">
+      <b>操作步骤：</b><br>
+      1️⃣ 在 OpenAI 注册页选择国家 <b id="countryName">哥伦比亚</b><br>
+      2️⃣ 输入上方手机号，点击「发送验证码」<br>
+      3️⃣ 回到本页面，点击下方按钮
+    </div>
 
-    <div class="btn-row">
-      <button class="btn btn-danger" id="replaceBtn" onclick="doReplace()">号码不可用，换一个</button>
-      <button class="btn btn-primary" id="sendCodeBtn" onclick="doSendCode()">我已发送验证码</button>
+    <button class="btn btn-primary" id="sendCodeBtn" onclick="doSendCode()" style="margin-top:12px;">我已发送验证码</button>
+  </div>
+
+  <!-- 等待验证码 -->
+  <div class="card hidden" id="waitingCard">
+    <div style="text-align:center;">
+      <!-- 第一行：突出状态 -->
+      <div style="font-size:16px;font-weight:700;color:#4f9cff;margin-bottom:12px;" id="waitingText">正在获取验证码...</div>
+
+      <!-- 60秒倒计时 -->
+      <div class="countdown-display" id="countdownDisplay">01:00</div>
+      <div class="countdown-hint">验证码通常需要30-60秒到达</div>
+
+      <!-- 引导：请耐心等待 -->
+      <div style="margin-bottom:12px;text-align:center;">
+        <img src="/images/guide-sms-sent.png" alt="验证码已发送" class="img-zoom" onclick="openLightbox(this.src)" style="width:60%;border-radius:6px;border:1px solid #333;">
+        <div style="font-size:13px;color:#ccc;margin-top:8px;line-height:1.6;">
+          如上图所示，请<b style="color:#4f9cff;">耐心等待</b>，<b style="color:#f0a040;">60秒</b>后若未收到验证码，将<b style="color:#4cff4c;">自动</b>为您申请新号
+        </div>
+      </div>
+
+      <!-- 类型一：OpenAI 账号异常 -->
+      <div class="issue-box">
+        <div style="font-size:11px;color:#666;margin-bottom:8px;">若页面显示「账号不可用」或「已注册」，可免费申请新号</div>
+        <button class="btn btn-warn btn-sm" id="accountIssueBtn" onclick="showConfirmModal()">
+          申请新手机号
+        </button>
+      </div>
     </div>
-    <div id="cooldownHint" class="status-text hidden"></div>
   </div>
 
   <!-- 验证码显示 -->
@@ -131,17 +231,50 @@ body {
       <div class="code-number" id="codeDisplay">---</div>
     </div>
     <div id="codeStatus" class="status-text success">验证码获取成功</div>
+    <div style="text-align:center;font-size:12px;color:#666;margin-top:8px;">
+      手机号：<span id="codePhone" style="color:#999;">---</span> · <span id="codeCountry" style="color:#999;"></span>
+    </div>
   </div>
 
-  <!-- 等待状态 -->
-  <div class="card hidden" id="waitingCard">
-    <div class="status-text waiting" id="waitingText">正在获取验证码...</div>
+  <!-- 图片灯箱 -->
+  <div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="放大查看">
+  </div>
+
+  <!-- 确认弹窗 -->
+  <div class="modal-overlay hidden" id="confirmModal">
+    <div class="modal-box">
+      <div style="font-size:16px;color:#fff;margin-bottom:12px;">确认申请新号码</div>
+      <div style="font-size:13px;color:#999;margin-bottom:12px;">
+        请确认 OpenAI 页面显示的是以下情况：
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+        <div style="flex:1;text-align:center;">
+          <img src="/images/issue-account-unavailable.png" alt="账号不可用" class="img-zoom" onclick="openLightbox(this.src)" style="width:100%;border-radius:6px;border:1px solid #444;">
+          <div style="font-size:11px;color:#888;margin-top:4px;">账号不可用</div>
+        </div>
+        <div style="display:flex;align-items:center;font-size:14px;color:#888;font-weight:600;">或</div>
+        <div style="flex:1;text-align:center;">
+          <img src="/images/issue-account-registered.png" alt="已注册" class="img-zoom" onclick="openLightbox(this.src)" style="width:100%;border-radius:6px;border:1px solid #444;">
+          <div style="font-size:11px;color:#888;margin-top:4px;">已注册</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#777;margin-bottom:4px;">
+        确认后系统将<b style="color:#4cff4c;">免费</b>为您更换新号码。
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-danger" onclick="hideConfirmModal()">取消</button>
+        <button class="btn btn-warn" onclick="confirmAccountIssue()">确认申请新号</button>
+      </div>
+    </div>
   </div>
 </div>
 
 <script>
 let currentCode = '';
-let pollingTimer = null;
+let countdownTimer = null;
+let countdownSeconds = 0;
+let smsPollTimer = null;
 
 function showToast(msg) {
   const t = document.createElement('div');
@@ -161,6 +294,19 @@ async function api(url, body) {
   return res.json();
 }
 
+// ---- 清理所有定时器 ----
+function clearTimers() {
+  if (countdownTimer) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+  if (smsPollTimer) {
+    clearTimeout(smsPollTimer);
+    smsPollTimer = null;
+  }
+}
+
+// ---- 兑换卡密 ----
 async function doRedeem() {
   const code = $('codeInput').value.trim().toUpperCase();
   if (!code) return showToast('请输入兑换码');
@@ -170,13 +316,35 @@ async function doRedeem() {
 
   const res = await api('/api/redeem', { code });
 
-  if (res.success) {
+  if (res.success && res.smsCode) {
+    // 已有验证码，直接显示
+    currentCode = code;
+    hide($('inputCard'));
+    showCode(res.smsCode, res.phoneNumber, res.country);
+    return;
+  }
+
+  if (res.success && res.phoneNumber) {
     currentCode = code;
     $('phoneDisplay').textContent = res.phoneNumber;
+    // 更新国家信息
+    if (res.country) {
+      $('countryBadge').innerHTML = res.country.flag + ' ' + res.country.name + ' (' + res.country.code + ')';
+      $('countryName').textContent = res.country.name;
+    }
+    // 重置提示文字
+    $('phoneHint').innerHTML = '<b>操作步骤：</b><br>1️⃣ 在 OpenAI 注册页选择国家 <b id="countryName">' + (res.country ? res.country.name : '') + '</b><br>2️⃣ 输入上方手机号，点击「发送验证码」<br>3️⃣ 回到本页面，点击下方按钮';
+    $('phoneHint').style.color = '#777';
     hide($('inputCard'));
-    show($('phoneCard'));
-    hide($('codeCard'));
-    hide($('waitingCard'));
+
+    if (res.verifyStarted) {
+      // 之前已点过"我已发送"，直接进入等待状态
+      doSendCode();
+    } else {
+      show($('phoneCard'));
+      hide($('codeCard'));
+      hide($('waitingCard'));
+    }
   } else {
     showToast(res.error || '兑换失败');
     $('redeemBtn').disabled = false;
@@ -184,113 +352,198 @@ async function doRedeem() {
   }
 }
 
+// ---- 我已发送验证码 ----
 async function doSendCode() {
-  hide($('codeCard'));
-  show($('waitingCard'));
+  clearTimers();
   $('sendCodeBtn').disabled = true;
-  $('replaceBtn').disabled = true;
 
-  await startPolling();
+  // 标记用户已点击"我已发送验证码"（防止20分钟自动退）
+  api('/api/verify-started', { code: currentCode }).catch(() => {});
+
+  // 先立刻查一次，如果码已经到了就不用等了
+  $('sendCodeBtn').textContent = '查询中...';
+  try {
+    const quickCheck = await api('/api/status/' + currentCode);
+    if (quickCheck.success) {
+      showCode(quickCheck.smsCode, quickCheck.phoneNumber, quickCheck.country);
+      $('sendCodeBtn').textContent = '我已发送验证码';
+      return;
+    }
+  } catch (e) { /* 查不到就正常等 */ }
+  $('sendCodeBtn').textContent = '我已发送验证码';
+
+  hide($('codeCard'));
+  hide($('phoneCard'));
+  show($('waitingCard'));
+
+  // 重置等待卡片状态
+  $('accountIssueBtn').disabled = false;
+  $('waitingText').textContent = '正在获取验证码...';
+
+    // 启动 60 秒倒计时
+  countdownSeconds = 60;
+  updateCountdown();
+  countdownTimer = setInterval(tickCountdown, 1000);
+
+  // 启动 SMS 轮询
+  pollForSms();
 }
 
-async function doReplace() {
-  $('sendCodeBtn').disabled = true;
-  $('replaceBtn').disabled = true;
-  $('waitingText').textContent = '正在为您更换新号码...';
-  hide($('codeCard'));
-  show($('waitingCard'));
+// ---- 倒计时 ----
+function updateCountdown() {
+  const m = Math.floor(countdownSeconds / 60);
+  const s = countdownSeconds % 60;
+  $('countdownDisplay').textContent =
+    String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+}
 
-  const res = await api('/api/replace', { code: currentCode });
+function tickCountdown() {
+  countdownSeconds--;
+  updateCountdown();
 
-  if (res.success && res.smsCode) {
-    showCode(res.smsCode);
-    return;
+  if (countdownSeconds <= 0) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+    onCountdownExpired();
+  }
+}
+
+// ---- SMS 轮询 ----
+async function pollForSms() {
+  try {
+    const res = await api('/api/status/' + currentCode);
+
+    if (res.success) {
+      clearTimers();
+      showCode(res.smsCode, res.phoneNumber, res.country);
+      return;
+    }
+  } catch (e) {
+    // 静默继续轮询
   }
 
-  if (res.success) {
-    $('phoneDisplay').textContent = res.phoneNumber;
-    $('waitingText').textContent = '新号码已就绪';
-    setTimeout(() => { hide($('waitingCard')); }, 1000);
-    $('sendCodeBtn').disabled = false;
-    $('replaceBtn').disabled = false;
-    hide($('cooldownHint'));
-    return;
+  smsPollTimer = setTimeout(pollForSms, 5000);
+}
+
+// ---- 倒计时到期（60秒未收到码） ----
+async function onCountdownExpired() {
+  clearTimeout(smsPollTimer);
+  smsPollTimer = null;
+
+  // 最后一刻再查一次，防止验证码刚好到了但没被发现
+  $('waitingText').textContent = '正在最后确认验证码...';
+  try {
+    const lastCheck = await api('/api/status/' + currentCode);
+    if (lastCheck.success) {
+      clearTimers();
+      showCode(lastCheck.smsCode, lastCheck.phoneNumber, lastCheck.country);
+      return;
+    }
+  } catch (e) { /* 查不到就继续换号 */ }
+
+  $('waitingText').textContent = '60秒已到，正在为您申请新号码...';
+  $('accountIssueBtn').disabled = true;
+
+  await replaceNumber('已为您申请新手机号，请使用新号码重新获取验证码');
+}
+
+// ---- 图片灯箱 ----
+function openLightbox(src) {
+  $('lightboxImg').src = src;
+  $('lightbox').classList.remove('hidden');
+}
+
+function closeLightbox() {
+  $('lightbox').classList.add('hidden');
+}
+
+// ---- 确认弹窗 ----
+function showConfirmModal() {
+  document.body.style.overflow = 'hidden';
+  $('confirmModal').classList.remove('hidden');
+}
+
+function hideConfirmModal() {
+  document.body.style.overflow = '';
+  $('confirmModal').classList.add('hidden');
+}
+
+function confirmAccountIssue() {
+  hideConfirmModal();
+  doAccountIssue();
+}
+
+// ---- 类型一：OpenAI 账号异常，用户主动报告 ----
+async function doAccountIssue() {
+  clearTimers();
+
+  $('waitingText').textContent = '正在为您申请新号码...';
+  $('accountIssueBtn').disabled = true;
+
+  await replaceNumber('已为您免费申请新手机号，请使用新号码重新获取验证码');
+}
+
+// ---- 换号通用逻辑 ----
+async function replaceNumber(hintText) {
+  try {
+    const res = await api('/api/replace', { code: currentCode });
+
+    // 码刚好到了
+    if (res.success && res.smsCode) {
+      showCode(res.smsCode, res.phoneNumber, res.country);
+      return;
+    }
+
+    // 新号就绪
+    if (res.success && res.replaced) {
+      $('phoneDisplay').textContent = res.phoneNumber;
+      $('phoneHint').textContent = hintText;
+      $('phoneHint').style.color = '#4f9cff';
+      // 更新国家信息
+      if (res.country) {
+        $('countryBadge').innerHTML = res.country.flag + ' ' + res.country.name + ' (' + res.country.code + ')';
+      }
+      hide($('waitingCard'));
+      show($('phoneCard'));
+      hide($('codeCard'));
+      $('sendCodeBtn').disabled = false;
+      return;
+    }
+
+    showToast(res.error || '换号失败，请重试');
+  } catch (e) {
+    showToast('网络错误，请重试');
   }
 
-  showToast(res.error || '操作失败');
-  $('sendCodeBtn').disabled = false;
-  $('replaceBtn').disabled = false;
+  // 失败回退到手机号卡片
   hide($('waitingCard'));
+  show($('phoneCard'));
+  $('sendCodeBtn').disabled = false;
+  }
+
+// ---- 复制手机号 ----
+function copyPhone() {
+  const phone = $('phoneDisplay').textContent;
+  navigator.clipboard.writeText(phone).then(() => {
+    showToast('已复制: ' + phone);
+  }).catch(() => {
+    showToast('复制失败，请手动复制');
+  });
 }
 
-function showCode(smsCode) {
+// ---- 显示验证码 ----
+function showCode(smsCode, phone, country) {
   $('codeDisplay').textContent = smsCode;
+  $('codePhone').textContent = phone || '';
+  $('codeCountry').textContent = country ? country.flag + ' ' + country.name : '';
   hide($('phoneCard'));
   hide($('waitingCard'));
   show($('codeCard'));
 }
 
-async function startPolling() {
-  let timeoutTriggered = false;
-
-  async function poll() {
-    const cooldownRes = await api('/api/cooldown/' + currentCode);
-    const remaining = cooldownRes.cooldownRemaining || 0;
-
-    // 冷却期还没过，10 秒后再查
-    if (remaining > 0) {
-      $('waitingText').textContent = '正在获取验证码...';
-      pollingTimer = setTimeout(poll, 10000);
-      return;
-    }
-
-    // 可以退款了，轮询取码
-    if (!timeoutTriggered) {
-      const res = await api('/api/status/' + currentCode);
-
-      if (res.success) {
-        showCode(res.smsCode);
-        return;
-      }
-
-      if (res.canRefund) {
-        // 已满 2 分钟且没码 → 触发超时退款
-        timeoutTriggered = true;
-        $('waitingText').textContent = '正在为您更换新号码...';
-
-        const timeoutRes = await api('/api/timeout', { code: currentCode });
-
-        if (timeoutRes.success && timeoutRes.smsCode) {
-          showCode(timeoutRes.smsCode);
-          return;
-        }
-
-        if (timeoutRes.success && timeoutRes.replaced) {
-          $('phoneDisplay').textContent = timeoutRes.phoneNumber;
-          $('waitingText').textContent = '新号码已就绪，请重新输入并发送验证码';
-          setTimeout(() => { hide($('waitingCard')); }, 1500);
-          $('sendCodeBtn').disabled = false;
-          $('replaceBtn').disabled = false;
-          return;
-        }
-
-        showToast(timeoutRes.error || '操作失败');
-        hide($('waitingCard'));
-        $('sendCodeBtn').disabled = false;
-        $('replaceBtn').disabled = false;
-        return;
-      }
-    }
-
-    pollingTimer = setTimeout(poll, 5000);
-  }
-
-  poll();
-}
-
-// 页面卸载时清除定时器
+// 页面卸载时清除所有定时器
 window.addEventListener('beforeunload', () => {
-  if (pollingTimer) clearTimeout(pollingTimer);
+  clearTimers();
 });
 </script>
 </body>

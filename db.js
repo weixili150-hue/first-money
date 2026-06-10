@@ -30,7 +30,16 @@ function initTables() {
       service_code TEXT NOT NULL DEFAULT '',
       country_id INTEGER NOT NULL DEFAULT 0,
       max_price REAL NOT NULL DEFAULT 0,
+      countries_config TEXT DEFAULT '[]',
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS country_failures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      country_id INTEGER NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      failure_type TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS cards (
@@ -41,10 +50,35 @@ function initTables() {
       phone_number TEXT,
       sms_code TEXT,
       purchased_at DATETIME,
+      country_id INTEGER,
+      price REAL,
+      replace_count INTEGER DEFAULT 0,
+      verify_started_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       used_at DATETIME
     );
+
+    CREATE TABLE IF NOT EXISTS pending_refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activation_id TEXT NOT NULL,
+      purchased_at DATETIME NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  // 迁移：给 cards 加 verify_started_at 列（兼容旧数据库）
+  try { d.exec('ALTER TABLE cards ADD COLUMN verify_started_at DATETIME'); } catch (e) { /* 已存在 */ }
+  // 迁移：给 cards 加 country_id 列
+  try { d.exec('ALTER TABLE cards ADD COLUMN country_id INTEGER'); } catch (e) { /* 已存在 */ }
+  // 迁移：给 cards 加 price 列（购买价位）
+  try { d.exec('ALTER TABLE cards ADD COLUMN price REAL'); } catch (e) { /* 已存在 */ }
+  // 迁移：给 cards 加 replace_count 列
+  try { d.exec('ALTER TABLE cards ADD COLUMN replace_count INTEGER DEFAULT 0'); } catch (e) { /* 已存在 */ }
+  // 迁移：给 country_failures 加 price 列
+  try { d.exec('ALTER TABLE country_failures ADD COLUMN price REAL NOT NULL DEFAULT 0'); } catch (e) { /* 已存在 */ }
+  // 迁移：给 configs 加 countries_config 列
+  try { d.exec('ALTER TABLE configs ADD COLUMN countries_config TEXT DEFAULT \'[]\''); } catch (e) { /* 已存在 */ }
 
   // 确保 configs 有且仅有一行
   const row = d.prepare('SELECT id FROM configs').get();
@@ -55,17 +89,45 @@ function initTables() {
 
 // --- configs 操作 ---
 function getConfig() {
-  return getDb().prepare('SELECT * FROM configs WHERE id = 1').get();
+  const row = getDb().prepare('SELECT * FROM configs WHERE id = 1').get();
+  if (row && row.countries_config) {
+    try { row.countries_config = JSON.parse(row.countries_config); } catch (e) { row.countries_config = []; }
+  } else {
+    row.countries_config = [];
+  }
+  return row;
 }
 
-function updateConfig({ hero_api_key, service_code, country_id, max_price }) {
+function updateConfig({ hero_api_key, service_code, country_id, max_price, countries_config }) {
   const d = getDb();
+  const configJson = countries_config ? JSON.stringify(countries_config) : null;
   d.prepare(`
     UPDATE configs
-    SET hero_api_key = ?, service_code = ?, country_id = ?, max_price = ?, updated_at = CURRENT_TIMESTAMP
+    SET hero_api_key = ?, service_code = ?, country_id = ?, max_price = ?,
+        countries_config = COALESCE(?, countries_config),
+        updated_at = CURRENT_TIMESTAMP
     WHERE id = 1
-  `).run(hero_api_key, service_code, country_id, max_price);
+  `).run(hero_api_key, service_code, country_id, max_price, configJson);
   return getConfig();
+}
+
+// --- country_failures 操作 ---
+function recordCountryFailure(countryId, price, failureType) {
+  return getDb().prepare(
+    "INSERT INTO country_failures (country_id, price, failure_type) VALUES (?, ?, ?)"
+  ).run(countryId, price, failureType);
+}
+
+function getRecentFailures(countryId, price, minutes) {
+  const rows = getDb().prepare(`
+    SELECT COUNT(*) as count FROM country_failures
+    WHERE country_id = ? AND price = ? AND created_at >= datetime('now', '-' || ? || ' minutes')
+  `).get(countryId, price, minutes);
+  return rows.count;
+}
+
+function clearCountryFailures(countryId, price) {
+  return getDb().prepare("DELETE FROM country_failures WHERE country_id = ? AND price = ?").run(countryId, price);
 }
 
 // --- cards 操作 ---
@@ -119,6 +181,43 @@ function getUnusedCards() {
   return getDb().prepare("SELECT * FROM cards WHERE status = 'unused' ORDER BY created_at DESC").all();
 }
 
+// --- pending_refunds 操作 ---
+function addPendingRefund(activationId, purchasedAt) {
+  return getDb().prepare(
+    "INSERT INTO pending_refunds (activation_id, purchased_at) VALUES (?, ?)"
+  ).run(activationId, purchasedAt);
+}
+
+function getPendingRefunds() {
+  return getDb().prepare(
+    "SELECT * FROM pending_refunds WHERE status = 'pending' ORDER BY created_at ASC"
+  ).all();
+}
+
+function markRefundDone(id, result) {
+  return getDb().prepare(
+    "UPDATE pending_refunds SET status = ? WHERE id = ?"
+  ).run(result, id);
+}
+
+// 标记用户已点击"我已发送验证码"
+function setVerifyStarted(id) {
+  return getDb().prepare(
+    "UPDATE cards SET verify_started_at = CURRENT_TIMESTAMP WHERE id = ?"
+  ).run(id);
+}
+
+// 查找超过20分钟未操作的空闲活跃卡
+function getIdleCards(minutes) {
+  return getDb().prepare(`
+    SELECT * FROM cards
+    WHERE status = 'active'
+      AND verify_started_at IS NULL
+      AND purchased_at IS NOT NULL
+      AND datetime(purchased_at, '+' || ? || ' minutes') <= datetime('now')
+  `).all(minutes);
+}
+
 module.exports = {
   getDb,
   getConfig,
@@ -128,4 +227,12 @@ module.exports = {
   updateCard,
   getCards,
   getUnusedCards,
+  addPendingRefund,
+  getPendingRefunds,
+  markRefundDone,
+  setVerifyStarted,
+  getIdleCards,
+  recordCountryFailure,
+  getRecentFailures,
+  clearCountryFailures,
 };
