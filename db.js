@@ -96,12 +96,12 @@ function getConfig() {
     row = { ...row, countries_config: [] };
   }
 
-  // 环境变量覆盖数据库值（用于 Render 等部署平台，避免重新部署丢配置）
-  if (process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
-  if (process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
-  if (process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID);
-  if (process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE);
-  if (process.env.COUNTRIES_CONFIG) {
+  // 环境变量仅作初始值：数据库为空时才用环境变量（适合 Render 首次部署）
+  if (!row.hero_api_key && process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
+  if (!row.service_code && process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
+  if (!row.country_id && process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID);
+  if (!row.max_price && process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE);
+  if (row.countries_config.length === 0 && process.env.COUNTRIES_CONFIG) {
     try { row.countries_config = JSON.parse(process.env.COUNTRIES_CONFIG); } catch (e) {}
   }
 
