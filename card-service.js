@@ -41,7 +41,7 @@ function detectCountryByPhone(phone) {
   return null;
 }
 
-// 格式化手机号：447549881566 → +44 7549 881566
+// 格式化手机号：447549881566 → 7549881566（去前缀，国家在badge显示）
 function formatPhoneNumber(phone) {
   if (!phone) return phone;
   const clean = phone.replace(/[\s\-()]+/g, '');
@@ -49,11 +49,10 @@ function formatPhoneNumber(phone) {
   const keys = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
   for (const prefix of keys) {
     if (clean.startsWith(prefix)) {
-      const rest = clean.slice(prefix.length);
-      return '+' + prefix + '  ' + rest;
+      return clean.slice(prefix.length);
     }
   }
-  return '+' + clean;
+  return clean;
 }
 
 // 冷却阈值：10分钟内同一价位失败2次以上 → 跳过该价位
