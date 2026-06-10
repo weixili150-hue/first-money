@@ -79,6 +79,8 @@ function initTables() {
   try { d.exec('ALTER TABLE country_failures ADD COLUMN price REAL NOT NULL DEFAULT 0'); } catch (e) { /* 已存在 */ }
   // 迁移：给 configs 加 countries_config 列
   try { d.exec('ALTER TABLE configs ADD COLUMN countries_config TEXT DEFAULT \'[]\''); } catch (e) { /* 已存在 */ }
+  // 迁移：给 cards 加 order_no 列（闲鱼订单号）
+  try { d.exec('ALTER TABLE cards ADD COLUMN order_no TEXT'); } catch (e) { /* 已存在 */ }
 
   // 确保 configs 有且仅有一行
   const row = d.prepare('SELECT id FROM configs').get();
@@ -228,12 +230,30 @@ function getIdleCards(minutes) {
   `).all(minutes);
 }
 
+// 通过订单号查卡密
+function getCardByOrderNo(orderNo) {
+  return getDb().prepare('SELECT * FROM cards WHERE order_no = ?').get(orderNo);
+}
+
+// 取一张未使用且未绑定的卡密
+function getUnusedUnboundCard() {
+  return getDb().prepare("SELECT * FROM cards WHERE status = 'unused' AND order_no IS NULL ORDER BY id ASC LIMIT 1").get();
+}
+
+// 绑定订单号到卡密
+function bindCardToOrder(cardId, orderNo) {
+  return getDb().prepare('UPDATE cards SET order_no = ? WHERE id = ?').run(orderNo, cardId);
+}
+
 module.exports = {
   getDb,
   getConfig,
   updateConfig,
   createCards,
   getCardByCode,
+  getCardByOrderNo,
+  getUnusedUnboundCard,
+  bindCardToOrder,
   updateCard,
   getCards,
   getUnusedCards,

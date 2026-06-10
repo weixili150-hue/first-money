@@ -8,6 +8,9 @@ const {
   getCardByCode,
   getCards,
   getUnusedCards,
+  getCardByOrderNo,
+  getUnusedUnboundCard,
+  bindCardToOrder,
   updateCard,
   addPendingRefund,
 } = require('./db');
@@ -55,9 +58,18 @@ if (DEMO_MODE) {
   const demoStore = new Map();
 
   app.post('/api/redeem', (req, res) => {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ error: '请输入卡密' });
-    const card = getCardByCode(code.trim().toUpperCase());
+    let { code, orderNo } = req.body;
+
+    // 支持订单号查询
+    let card;
+    if (orderNo) {
+      card = getCardByOrderNo(orderNo.toString().trim());
+      if (!card) return res.json({ success: false, error: '订单号不存在，请确认后重试' });
+      code = card.code; // 转为卡密处理
+    }
+
+    if (!code) return res.status(400).json({ error: '请输入兑换码或订单号' });
+    if (!card) card = getCardByCode(code.trim().toUpperCase());
     if (!card) return res.json({ success: false, error: '卡密不存在' });
 
     // 已完成 → 返回验证码
@@ -230,8 +242,13 @@ function requireAdmin(req, res, next) {
 // 兑换卡密
 app.post('/api/redeem', async (req, res) => {
   try {
-    const { code } = req.body;
-    if (!code) return res.status(400).json({ error: '请输入卡密' });
+    let { code, orderNo } = req.body;
+    if (orderNo) {
+      const cardByOrder = getCardByOrderNo(orderNo.toString().trim());
+      if (!cardByOrder) return res.json({ success: false, error: '订单号不存在，请确认后重试' });
+      code = cardByOrder.code;
+    }
+    if (!code) return res.status(400).json({ error: '请输入兑换码或订单号' });
     const result = await redeemCard(code.trim().toUpperCase());
     res.json(result);
   } catch (e) {
@@ -486,6 +503,32 @@ app.post('/api/admin/cards/:id/reset', requireAdmin, async (req, res) => {
     });
 
     res.json({ success: true, message: '卡密已重置' });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
+});
+
+// 绑定订单号到卡密
+app.post('/api/admin/cards/bind', requireAdmin, (req, res) => {
+  const { orderNo } = req.body;
+  if (!orderNo) return res.status(400).json({ error: '请输入订单号' });
+
+  // 检查订单号是否已绑定
+  const existing = getCardByOrderNo(orderNo.toString().trim());
+  if (existing) return res.json({ success: false, error: '该订单号已绑定卡密 ' + existing.code });
+
+  // 取一张未使用的卡密
+  const card = getUnusedUnboundCard();
+  if (!card) return res.json({ success: false, error: '没有可用卡密，请先生成' });
+
+  bindCardToOrder(card.id, orderNo.toString().trim());
+
+  res.json({
+    success: true,
+    orderNo: orderNo.toString().trim(),
+    code: card.code,
+    guide: '使用说明：\n\n1. 打开 openai.com 注册账号\n2. 选择对应国家，输入手机号\n3. 回到 ' + (process.env.SITE_URL || 'https://first-money.onrender.com') + ' 输入订单号查看验证码\n\n如遇问题请联系客服。',
+  });
   } catch (e) {
     res.json({ success: false, error: e.message });
   }

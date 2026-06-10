@@ -166,8 +166,8 @@ body {
   <!-- 输入卡密 -->
   <div class="card" id="inputCard">
     <div class="input-group">
-      <label>兑换码</label>
-      <input type="text" id="codeInput" placeholder="FM-XXXX-XXXX-XXXX" maxlength="17" autocomplete="off">
+      <label>兑换码 或 闲鱼订单号</label>
+      <input type="text" id="codeInput" placeholder="输入兑换码或闲鱼订单号" maxlength="30" autocomplete="off">
     </div>
     <button class="btn btn-primary" id="redeemBtn" onclick="doRedeem()">确认兑换</button>
   </div>
@@ -308,13 +308,16 @@ function clearTimers() {
 
 // ---- 兑换卡密 ----
 async function doRedeem() {
-  const code = $('codeInput').value.trim().toUpperCase();
-  if (!code) return showToast('请输入兑换码');
+  const input = $('codeInput').value.trim();
+  if (!input) return showToast('请输入兑换码或订单号');
 
   $('redeemBtn').disabled = true;
   $('redeemBtn').textContent = '处理中...';
 
-  const res = await api('/api/redeem', { code });
+  // 自动识别是卡密还是订单号（FM- 开头为卡密，否则为订单号）
+  const isCardCode = input.toUpperCase().startsWith('FM-');
+  const payload = isCardCode ? { code: input.toUpperCase() } : { orderNo: input };
+  const res = await api('/api/redeem', payload);
 
   if (res.success && res.smsCode) {
     // 已有验证码，直接显示

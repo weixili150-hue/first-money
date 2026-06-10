@@ -135,6 +135,18 @@ td { color: #ccc; }
       <div id="configMsg"></div>
     </div>
 
+    <!-- 闲鱼发货 -->
+    <div class="card">
+      <h2>📦 闲鱼发货绑定</h2>
+      <div style="font-size:12px;color:#888;margin-bottom:8px;">输入闲鱼订单号，自动绑定一张卡密</div>
+      <div class="input-row">
+        <label>订单号</label>
+        <input type="text" id="orderNoInput" placeholder="闲鱼订单号">
+      </div>
+      <button class="btn btn-primary" onclick="bindOrder()">绑定卡密</button>
+      <div id="bindResult" style="margin-top:12px;"></div>
+    </div>
+
     <!-- 生成卡密 -->
     <div class="card">
       <h2>生成卡密</h2>
@@ -331,11 +343,12 @@ async function loadOrders() {
     completed: 'status-completed',
   };
 
-  let html = '<table><thead><tr><th>卡密</th><th>状态</th><th>手机号</th><th>验证码</th><th>换号</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>订单号</th><th>卡密</th><th>状态</th><th>手机号</th><th>验证码</th><th>换号</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
   for (const c of res.rows || []) {
     const canReset = c.status === 'active' || c.status === 'completed';
     html += `<tr>
-      <td style="font-family:monospace;font-size:12px;">${c.code}</td>
+      <td style="font-size:11px;color:#f0a040;">${c.order_no || '-'}</td>
+      <td style="font-family:monospace;font-size:12px;">${c.code.substring(0,10)}...</td>
       <td><span class="status-badge ${badges[c.status] || ''}">${c.status}</span></td>
       <td>${c.phone_number || '-'}</td>
       <td>${c.sms_code || '-'}</td>
@@ -346,6 +359,30 @@ async function loadOrders() {
   }
   html += '</tbody></table>';
   $('ordersTable').innerHTML = html;
+}
+
+async function bindOrder() {
+  const orderNo = $('orderNoInput').value.trim();
+  if (!orderNo) return showToast('请输入订单号');
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '处理中...';
+  try {
+    const res = await api('/api/admin/cards/bind', { orderNo });
+    const el = $('bindResult');
+    if (res.success) {
+      el.innerHTML = `<div class="success-text" style="font-size:14px;">✅ 绑定成功！<br><br>
+        <b>订单号:</b> ${res.orderNo}<br>
+        <b>卡密:</b> <code style="background:#111;padding:2px 6px;border-radius:4px;font-size:14px;">${res.code}</code><br><br>
+        <div style="font-size:12px;color:#888;">用户可通过订单号自助获取卡密</div>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText('${res.code}')" style="margin-top:8px;">复制卡密</button>
+        <button class="btn btn-outline btn-sm" onclick="navigator.clipboard.writeText(\`${res.guide.replace(/\n/g,'\\n').replace(/`/g,'\\`')}\`)" style="margin-top:8px;">复制使用说明</button></div>`;
+      $('orderNoInput').value = '';
+      loadOrders();
+    } else {
+      el.innerHTML = '<div class="error-text">' + (res.error || '绑定失败') + '</div>';
+    }
+  } catch(e) { showToast('网络错误'); }
+  btn.disabled = false; btn.textContent = '绑定卡密';
 }
 
 async function loadBalance() {
