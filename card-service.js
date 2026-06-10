@@ -41,6 +41,21 @@ function detectCountryByPhone(phone) {
   return null;
 }
 
+// 格式化手机号：447549881566 → +44 7549 881566
+function formatPhoneNumber(phone) {
+  if (!phone) return phone;
+  const clean = phone.replace(/[\s\-()]+/g, '');
+  const prefixMap = { '254': 3, '234': 3, '44': 2, '91': 2, '62': 2, '63': 2, '84': 2, '60': 2, '66': 2, '55': 2, '20': 2, '57': 2, '7': 1, '52': 2, '54': 2 };
+  const keys = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
+  for (const prefix of keys) {
+    if (clean.startsWith(prefix)) {
+      const rest = clean.slice(prefix.length);
+      return '+' + prefix + ' ' + rest;
+    }
+  }
+  return '+' + clean;
+}
+
 // 冷却阈值：10分钟内同一价位失败2次以上 → 跳过该价位
 const COOLDOWN_FAILURE_LIMIT = 2;
 const COOLDOWN_WINDOW_MIN = 10;
@@ -193,13 +208,13 @@ async function redeemCard(code) {
         code,
         resumed: true,
         smsCode: card.sms_code,
-        phoneNumber: card.phone_number,
+        phoneNumber: formatPhoneNumber(card.phone_number),
         country,
       };
     }
     // 超过10分钟，也返回码（但标记过期）
     const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
-    return { success: true, code, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, country, expired: true };
+    return { success: true, code, resumed: true, smsCode: card.sms_code, phoneNumber: formatPhoneNumber(card.phone_number), country, expired: true };
   }
 
   // 活跃中 → 恢复进度
@@ -212,7 +227,7 @@ async function redeemCard(code) {
         success: true,
         code,
         resumed: true,
-        phoneNumber: card.phone_number,
+        phoneNumber: formatPhoneNumber(card.phone_number),
         activationId: card.activation_id,
         verifyStarted: !!card.verify_started_at,
         country,
@@ -263,7 +278,7 @@ async function redeemCard(code) {
   return {
     success: true,
     code,
-    phoneNumber: result.phoneNumber,
+    phoneNumber: formatPhoneNumber(result.phoneNumber),
     activationId: result.activationId,
     country,
   };
@@ -275,7 +290,7 @@ async function pollForCode(code) {
   if (!card || !card.activation_id) return { success: false, error: '无激活记录' };
   if (card.status === 'completed' && card.sms_code) {
     const country = getCountryInfo(card.country_id || 0);
-    return { success: true, smsCode: card.sms_code, phoneNumber: card.phone_number, country };
+    return { success: true, smsCode: card.sms_code, phoneNumber: formatPhoneNumber(card.phone_number), country };
   }
 
   const config = getConfigOrThrow();
@@ -285,7 +300,7 @@ async function pollForCode(code) {
     const smsCode = result.split(':').slice(1).join(':') || '';
     updateCard(card.id, { status: 'completed', sms_code: smsCode });
     const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
-    return { success: true, smsCode, phoneNumber: card.phone_number, country };
+    return { success: true, smsCode, phoneNumber: formatPhoneNumber(card.phone_number), country };
   }
 
   // 检查是否已到 2 分钟退款窗口
@@ -379,7 +394,7 @@ async function handleTimeout(code) {
   return {
     success: true,
     replaced: true,
-    phoneNumber: newResult.phoneNumber,
+    phoneNumber: formatPhoneNumber(newResult.phoneNumber),
     activationId: newResult.activationId,
     country,
   };
@@ -443,7 +458,7 @@ async function requestReplaceNumber(code) {
   return {
     success: true,
     replaced: true,
-    phoneNumber: result.phoneNumber,
+    phoneNumber: formatPhoneNumber(result.phoneNumber),
     activationId: result.activationId,
     country,
   };
