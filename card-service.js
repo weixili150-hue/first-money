@@ -29,6 +29,18 @@ function getCountryInfo(countryId) {
   return COUNTRIES[countryId] || { flag: '🌍', name: '国家' + countryId, code: '' };
 }
 
+// 根据手机号前缀推断真实国家
+function detectCountryByPhone(phone) {
+  if (!phone) return null;
+  const clean = phone.replace(/[\s\-()]+/g, '');
+  const prefixMap = { '44': 43, '91': 21, '62': 12, '63': 6, '84': 3, '60': 16, '66': 22, '55': 11, '254': 14, '20': 9, '57': 33, '7': 2, '52': 42, '54': 34, '234': 19 };
+  const keys = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
+  for (const prefix of keys) {
+    if (clean.startsWith(prefix)) return getCountryInfo(prefixMap[prefix]);
+  }
+  return null;
+}
+
 // 冷却阈值：10分钟内同一价位失败2次以上 → 跳过该价位
 const COOLDOWN_FAILURE_LIMIT = 2;
 const COOLDOWN_WINDOW_MIN = 10;
@@ -175,7 +187,7 @@ async function redeemCard(code) {
   if (card.status === 'completed' && card.sms_code) {
     const elapsed = card.purchased_at ? Date.now() - new Date(card.purchased_at).getTime() : 0;
     if (elapsed < 600000) { // 10分钟内
-      const country = getCountryInfo(card.country_id || 0);
+      const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
       return {
         success: true,
         code,
@@ -186,7 +198,8 @@ async function redeemCard(code) {
       };
     }
     // 超过10分钟，也返回码（但标记过期）
-    return { success: true, code, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, expired: true };
+    const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
+    return { success: true, code, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, country, expired: true };
   }
 
   // 活跃中 → 恢复进度
@@ -194,7 +207,7 @@ async function redeemCard(code) {
   if (card.status === 'active' && card.phone_number) {
     const elapsed = card.purchased_at ? Date.now() - new Date(card.purchased_at).getTime() : 0;
     if (elapsed < 600000) { // 10分钟内可恢复
-      const country = getCountryInfo(card.country_id || 0);
+      const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
       return {
         success: true,
         code,
@@ -245,7 +258,7 @@ async function redeemCard(code) {
     used_at: new Date().toISOString(),
   });
 
-  const country = getCountryInfo(result.countryId);
+  const country = detectCountryByPhone(result.phoneNumber) || getCountryInfo(result.countryId);
 
   return {
     success: true,
@@ -271,7 +284,7 @@ async function pollForCode(code) {
   if (result.startsWith('STATUS_OK:')) {
     const smsCode = result.split(':').slice(1).join(':') || '';
     updateCard(card.id, { status: 'completed', sms_code: smsCode });
-    const country = getCountryInfo(card.country_id || 0);
+    const country = detectCountryByPhone(card.phone_number) || getCountryInfo(card.country_id || 0);
     return { success: true, smsCode, phoneNumber: card.phone_number, country };
   }
 
@@ -361,7 +374,7 @@ async function handleTimeout(code) {
     purchased_at: new Date().toISOString(),
   });
 
-  const country = getCountryInfo(newResult.countryId);
+  const country = detectCountryByPhone(newResult.phoneNumber) || getCountryInfo(newResult.countryId);
 
   return {
     success: true,
@@ -425,7 +438,7 @@ async function requestReplaceNumber(code) {
     purchased_at: new Date().toISOString(),
   });
 
-  const country = getCountryInfo(result.countryId);
+  const country = detectCountryByPhone(result.phoneNumber) || getCountryInfo(result.countryId);
 
   return {
     success: true,

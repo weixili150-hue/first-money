@@ -47,6 +47,61 @@ function getCountryInfo(countryId) {
   return COUNTRIES[countryId] || { flag: '🌍', name: '未知国家', code: '' };
 }
 
+// 根据手机号前缀推断真实国家（HeroSMS返回的号码可能与请求国家不同）
+function detectCountryByPhone(phone) {
+  if (!phone) return null;
+  const clean = phone.replace(/[\s\-()]+/g, '');
+  // 按前缀长度从长到短匹配
+  const prefixMap = [
+    [7, 2], [20, 9], [27, null], [30, null], [31, null], [32, null],
+    [33, null], [34, 34], [36, null], [39, null], [40, null], [41, null],
+    [43, null], [44, 43], [45, null], [46, null], [47, null], [48, null],
+    [49, null], [51, null], [52, 42], [53, null], [54, 34], [55, 11],
+    [56, null], [57, 33], [58, null], [60, 16], [61, null], [62, 12],
+    [63, 6], [64, null], [65, null], [66, 22], [81, null], [82, null],
+    [84, 3], [86, null], [90, null], [91, 21], [92, null], [93, null],
+    [94, null], [95, null], [98, null], [212, null], [213, null],
+    [216, null], [218, null], [220, null], [221, null], [222, null],
+    [223, null], [224, null], [225, null], [226, null], [227, null],
+    [228, null], [229, null], [230, null], [231, null], [232, null],
+    [233, null], [234, 19], [235, null], [236, null], [237, null],
+    [238, null], [239, null], [240, null], [241, null], [242, null],
+    [243, null], [244, null], [245, null], [246, null], [247, null],
+    [248, null], [249, null], [250, null], [251, null], [252, null],
+    [253, null], [254, 14], [255, null], [256, null], [257, null],
+    [258, null], [260, null], [261, null], [262, null], [263, null],
+    [264, null], [265, null], [266, null], [267, null], [268, null],
+    [269, null], [290, null], [291, null], [297, null], [298, null],
+    [299, null], [350, null], [351, null], [352, null], [353, null],
+    [354, null], [355, null], [356, null], [357, null], [358, null],
+    [359, null], [370, null], [371, null], [372, null], [373, null],
+    [374, null], [375, null], [376, null], [377, null], [378, null],
+    [380, null], [381, null], [382, null], [383, null], [385, null],
+    [386, null], [387, null], [389, null], [420, null], [421, null],
+    [423, null], [500, null], [501, null], [502, null], [503, null],
+    [504, null], [505, null], [506, null], [507, null], [508, null],
+    [509, null], [590, null], [591, null], [592, null], [593, null],
+    [594, null], [595, null], [596, null], [597, null], [598, null],
+    [599, null], [670, null], [672, null], [673, null], [674, null],
+    [675, null], [676, null], [677, null], [678, null], [679, null],
+    [680, null], [681, null], [682, null], [683, null], [685, null],
+    [686, null], [687, null], [688, null], [689, null], [690, null],
+    [691, null], [692, null], [850, null], [852, null], [853, null],
+    [855, null], [856, null], [880, null], [886, null], [960, null],
+    [961, null], [962, null], [963, null], [964, null], [965, null],
+    [966, null], [967, null], [968, null], [970, null], [971, null],
+    [972, null], [973, null], [974, null], [975, null], [976, null],
+    [977, null], [992, null], [993, null], [994, null], [995, null],
+    [996, null], [998, null],
+  ];
+  for (const [prefix, countryId] of prefixMap) {
+    if (clean.startsWith(String(prefix)) && countryId) {
+      return getCountryInfo(countryId);
+    }
+  }
+  return null;
+}
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -123,7 +178,8 @@ if (DEMO_MODE) {
       used_at: new Date().toISOString(),
     });
 
-    res.json({ success: true, code: code.trim().toUpperCase(), phoneNumber, activationId: 'demo_id', country: countryInfo });
+    const realCountry = detectCountryByPhone(phoneNumber) || countryInfo;
+    res.json({ success: true, code: code.trim().toUpperCase(), phoneNumber, activationId: 'demo_id', country: realCountry });
   });
 
   app.get('/api/status/:code', (req, res) => {
@@ -134,7 +190,7 @@ if (DEMO_MODE) {
     // 演示模式：5秒后自动发验证码
     if (elapsed > 5000) {
       const card = getCardByCode(req.params.code);
-      const countryInfo = getCountryInfo(card ? card.country_id : 33);
+      const countryInfo = detectCountryByPhone(data.phoneNumber) || getCountryInfo(card ? card.country_id : 33);
       return res.json({ success: true, smsCode: data.smsCode, phoneNumber: data.phoneNumber, country: countryInfo });
     }
     res.json({ success: false, waiting: true, status: 'STATUS_WAIT_CODE' });
@@ -183,7 +239,8 @@ if (DEMO_MODE) {
       purchased_at: new Date().toISOString(),
     });
 
-    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: ci });
+    const detected = detectCountryByPhone(newPhone) || ci;
+    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: detected });
   });
 
   app.post('/api/timeout', (req, res) => {
@@ -224,7 +281,8 @@ if (DEMO_MODE) {
       purchased_at: new Date().toISOString(),
     });
 
-    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: ci });
+    const detected = detectCountryByPhone(newPhone) || ci;
+    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: detected });
   });
 }
 
