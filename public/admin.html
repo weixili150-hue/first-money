@@ -109,6 +109,14 @@ td { color: #ccc; }
   <!-- 主内容 -->
   <div id="mainContent" class="hidden">
 
+    <!-- 余额 -->
+    <div id="balanceBar" style="background:#111;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:14px;display:flex;align-items:center;gap:12px;">
+      <span style="font-size:18px;">💰</span>
+      <span style="color:#999;">余额</span>
+      <b id="balanceAmount" style="font-size:18px;color:#4cff4c;">---</b>
+      <span id="balanceEstimate" style="color:#666;font-size:12px;"></span>
+    </div>
+
     <!-- 配置 -->
     <div class="card">
       <h2>HeroSMS 配置</h2>
@@ -200,6 +208,7 @@ async function doLogin() {
     loadConfig();
     loadOrders();
     loadStats();
+    loadBalance();
   } else {
     showToast('密码错误');
   }
@@ -322,18 +331,55 @@ async function loadOrders() {
     completed: 'status-completed',
   };
 
-  let html = '<table><thead><tr><th>卡密</th><th>状态</th><th>手机号</th><th>验证码</th><th>创建时间</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>卡密</th><th>状态</th><th>手机号</th><th>验证码</th><th>换号</th><th>创建时间</th><th>操作</th></tr></thead><tbody>';
   for (const c of res.rows || []) {
+    const canReset = c.status === 'active' || c.status === 'completed';
     html += `<tr>
       <td style="font-family:monospace;font-size:12px;">${c.code}</td>
       <td><span class="status-badge ${badges[c.status] || ''}">${c.status}</span></td>
       <td>${c.phone_number || '-'}</td>
       <td>${c.sms_code || '-'}</td>
+      <td style="text-align:center;">${c.replace_count || 0}/3</td>
       <td>${(c.created_at || '').replace('T', ' ').substring(0, 16)}</td>
+      <td>${canReset ? `<button class="btn btn-outline btn-sm" onclick="resetCard(${c.id},'${c.code.substring(0,12)}...')" style="padding:4px 8px;font-size:11px;">重置</button>` : '-'}</td>
     </tr>`;
   }
   html += '</tbody></table>';
   $('ordersTable').innerHTML = html;
+}
+
+async function loadBalance() {
+  try {
+    const res = await api('/api/admin/balance');
+    if (res.balance == null) { $('balanceAmount').textContent = '查询失败'; return; }
+
+    const b = res.balance;
+    let color = '#4cff4c';
+    if (b < res.minPrice * 10) color = '#f0a040';
+    if (b < res.minPrice * 5) color = '#e74c3c';
+
+    $('balanceAmount').textContent = '$' + b.toFixed(2);
+    $('balanceAmount').style.color = color;
+    $('balanceEstimate').textContent = '｜约可购买 ' + res.estimatedBuys + ' 次 (最低 $' + res.minPrice.toFixed(3) + ')';
+  } catch(e) {}
+}
+
+async function resetCard(id, label) {
+  if (!confirm('确定要重置卡密 ' + label + ' 吗？\n\n系统会尝试退款当前号码，然后将卡密恢复为未使用状态。')) return;
+
+  try {
+    const res = await api('/api/admin/cards/' + id + '/reset', {});
+    if (res.success) {
+      showToast('✅ 卡密 ' + label + ' 已重置');
+      loadOrders();
+      loadBalance();
+      loadStats();
+    } else {
+      showToast('重置失败: ' + (res.error || '未知错误'));
+    }
+  } catch(e) {
+    showToast('网络错误');
+  }
 }
 
 async function loadStats() {

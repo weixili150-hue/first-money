@@ -8,6 +8,8 @@ const {
   getCardByCode,
   getCards,
   getUnusedCards,
+  updateCard,
+  addPendingRefund,
 } = require('./db');
 const {
   redeemCard,
@@ -424,6 +426,69 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
     replaceDist,
     refunds,
   });
+});
+
+// 余额查询
+app.get('/api/admin/balance', requireAdmin, async (req, res) => {
+  const config = getConfig();
+  try {
+    const { getBalance } = require('./hero-api');
+    const balance = await getBalance(config.hero_api_key);
+
+    // 计算最低价位和可买次数
+    let minPrice = 0.05;
+    if (config.countries_config && config.countries_config.length > 0) {
+      minPrice = Math.min(...config.countries_config.map(c => c.max_price));
+    } else if (config.max_price > 0) {
+      minPrice = config.max_price;
+    }
+    const estimatedBuys = Math.floor(balance / minPrice);
+
+    res.json({ balance, minPrice, estimatedBuys });
+  } catch (e) {
+    res.json({ balance: null, error: '查询失败' });
+  }
+});
+
+// 手动重置卡密（管理员操作）
+app.post('/api/admin/cards/:id/reset', requireAdmin, async (req, res) => {
+  const db = require('./db');
+  const card = db.getDb().prepare('SELECT * FROM cards WHERE id = ?').get(req.params.id);
+  if (!card) return res.json({ success: false, error: '卡密不存在' });
+
+  try {
+    // 如果有真实激活ID，尝试退款
+    if (card.activation_id && !card.activation_id.startsWith('demo_')) {
+      const config = getConfig();
+      if (config.hero_api_key) {
+        const { cancelActivation } = require('./hero-api');
+        const result = await cancelActivation(config.hero_api_key, card.activation_id);
+        if (result !== 'ACCESS_CANCEL') {
+          // 退款失败（可能在冷静期），加入待退款队列
+          addPendingRefund(card.activation_id, card.purchased_at || new Date().toISOString());
+          console.log(`[管理员重置] 激活ID ${card.activation_id} 退款失败(${result})，加入待退款队列`);
+        } else {
+          console.log(`[管理员重置] 激活ID ${card.activation_id} 退款成功`);
+        }
+      }
+    }
+
+    // 重置卡密为未使用
+    updateCard(card.id, {
+      status: 'unused',
+      activation_id: null,
+      phone_number: null,
+      sms_code: null,
+      purchased_at: null,
+      used_at: null,
+      verify_started_at: null,
+      replace_count: 0,
+    });
+
+    res.json({ success: true, message: '卡密已重置' });
+  } catch (e) {
+    res.json({ success: false, error: e.message });
+  }
 });
 
 app.listen(PORT, () => {
