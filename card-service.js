@@ -50,7 +50,7 @@ function formatPhoneNumber(phone) {
   for (const prefix of keys) {
     if (clean.startsWith(prefix)) {
       const rest = clean.slice(prefix.length);
-      return '+' + prefix + ' ' + rest;
+      return '+' + prefix + '  ' + rest;
     }
   }
   return '+' + clean;
