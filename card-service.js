@@ -38,6 +38,18 @@ function isPriceInCooldown(countryId, price) {
   return failures >= COOLDOWN_FAILURE_LIMIT;
 }
 
+// 价格缓存（避免每次购买都查所有国家价格）
+const priceCache = {
+  data: null,        // [{country_id, price, country_name}, ...]
+  timestamp: 0,
+  TTL: 10 * 60 * 1000, // 10分钟缓存
+};
+
+function invalidatePriceCache() {
+  priceCache.data = null;
+  priceCache.timestamp = 0;
+}
+
 // 收集所有国家所有价位，全球排序，逐个尝试
 async function tryBuyNumber(config) {
   // 收集配置的国家
@@ -50,37 +62,55 @@ async function tryBuyNumber(config) {
 
   if (countryEntries.length === 0) return { error: '未配置任何国家' };
 
-  // 查询每个国家的实际价位
-  const allTiers = [];
-  for (const entry of countryEntries) {
-    const cname = getCountryInfo(entry.country_id).name;
-    console.log(`[价位查询] ${cname}(${entry.country_id}) 最高 $${entry.max_price}...`);
-    try {
-      const raw = await getPrices(config.hero_api_key, {
-        service: config.service_code,
-        country: entry.country_id,
-      });
-      const prices = parsePrices(raw, entry.max_price);
-      console.log(`[价位查询] ${cname} 可用价位: ${prices.map(p => '$' + p.price).join(', ') || '无'}`);
-      for (const p of prices) {
+  // 使用缓存或重新查询价位
+  let allTiers;
+  const now = Date.now();
+  if (priceCache.data && (now - priceCache.timestamp) < priceCache.TTL) {
+    allTiers = priceCache.data;
+    console.log('[价位缓存] 使用缓存，' + allTiers.length + ' 个价位');
+  } else {
+    allTiers = [];
+    for (const entry of countryEntries) {
+      const cname = getCountryInfo(entry.country_id).name;
+      console.log(`[价位查询] ${cname}(${entry.country_id}) 最高 $${entry.max_price}...`);
+      try {
+        const raw = await getPrices(config.hero_api_key, {
+          service: config.service_code,
+          country: entry.country_id,
+        });
+        const prices = parsePrices(raw, entry.max_price);
+        console.log(`[价位查询] ${cname} 可用价位: ${prices.map(p => '$' + p.price).join(', ') || '无'}`);
+        for (const p of prices) {
+          allTiers.push({
+            country_id: entry.country_id,
+            price: p.price,
+            country_name: cname,
+          });
+        }
+      } catch (e) {
+        console.log(`[价位查询] ${cname} 查询失败，使用配置最高价 $${entry.max_price}`);
         allTiers.push({
           country_id: entry.country_id,
-          price: p.price,
+          price: entry.max_price,
           country_name: cname,
         });
       }
-    } catch (e) {
-      // 查询失败就用最高价作为唯一选项
-      console.log(`[价位查询] ${cname} 查询失败，使用配置最高价 $${entry.max_price}`);
-      allTiers.push({
-        country_id: entry.country_id,
-        price: entry.max_price,
-        country_name: cname,
-      });
+    }
+
+    if (allTiers.length === 0) {
+      // 如果有缓存但已过期且查询全失败，用旧缓存兜底
+      if (priceCache.data && priceCache.data.length > 0) {
+        console.log('[价位缓存] 查询失败，使用过期缓存兜底');
+        allTiers = priceCache.data;
+      } else {
+        return { error: 'NO_NUMBERS' };
+      }
+    } else {
+      // 更新缓存
+      priceCache.data = allTiers;
+      priceCache.timestamp = now;
     }
   }
-
-  if (allTiers.length === 0) return { error: 'NO_NUMBERS' };
 
   // 按价格全球排序，同价格随机（避免总让一个国家扛）
   allTiers.sort((a, b) => a.price - b.price || Math.random() - 0.5);
@@ -108,6 +138,7 @@ async function tryBuyNumber(config) {
     console.log(`[购买] ❌ ${tier.country_name} $${tier.price} 失败: ${result.error}`);
     if (result.error === 'NO_NUMBERS') {
       recordCountryFailure(tier.country_id, tier.price, 'no_numbers');
+      invalidatePriceCache(); // 缓存可能不准确了，下次重查
     } else if (result.error === 'NO_BALANCE') {
       return { error: 'NO_BALANCE' };
     }
@@ -468,6 +499,7 @@ module.exports = {
   requestReplaceNumber,
   processPendingRefunds,
   autoRefundIdleCards,
+  invalidatePriceCache,
   COOLDOWN_MS,
   POLL_INTERVAL,
 };
