@@ -467,6 +467,29 @@ app.get('/api/admin/balance', requireAdmin, async (req, res) => {
   }
 });
 
+// 绑定订单号到卡密（必须在 :id/reset 之前注册，否则 bind 会被 :id 截胡）
+app.post('/api/admin/cards/bind', requireAdmin, (req, res) => {
+  const { orderNo } = req.body;
+  if (!orderNo) return res.status(400).json({ error: '请输入订单号' });
+
+  // 检查订单号是否已绑定
+  const existing = getCardByOrderNo(orderNo.toString().trim());
+  if (existing) return res.json({ success: false, error: '该订单号已绑定卡密 ' + existing.code });
+
+  // 取一张未使用的卡密
+  const card = getUnusedUnboundCard();
+  if (!card) return res.json({ success: false, error: '没有可用卡密，请先生成' });
+
+  bindCardToOrder(card.id, orderNo.toString().trim());
+
+  res.json({
+    success: true,
+    orderNo: orderNo.toString().trim(),
+    code: card.code,
+    guide: '使用说明：\n\n1. 打开 openai.com 注册账号\n2. 选择对应国家，输入手机号\n3. 回到 ' + (process.env.SITE_URL || 'https://first-money.onrender.com') + ' 输入订单号查看验证码\n\n如遇问题请联系客服。',
+  });
+});
+
 // 手动重置卡密（管理员操作）
 app.post('/api/admin/cards/:id/reset', requireAdmin, async (req, res) => {
   const db = require('./db');
@@ -503,32 +526,6 @@ app.post('/api/admin/cards/:id/reset', requireAdmin, async (req, res) => {
     });
 
     res.json({ success: true, message: '卡密已重置' });
-  } catch (e) {
-    res.json({ success: false, error: e.message });
-  }
-});
-
-// 绑定订单号到卡密
-app.post('/api/admin/cards/bind', requireAdmin, (req, res) => {
-  const { orderNo } = req.body;
-  if (!orderNo) return res.status(400).json({ error: '请输入订单号' });
-
-  // 检查订单号是否已绑定
-  const existing = getCardByOrderNo(orderNo.toString().trim());
-  if (existing) return res.json({ success: false, error: '该订单号已绑定卡密 ' + existing.code });
-
-  // 取一张未使用的卡密
-  const card = getUnusedUnboundCard();
-  if (!card) return res.json({ success: false, error: '没有可用卡密，请先生成' });
-
-  bindCardToOrder(card.id, orderNo.toString().trim());
-
-  res.json({
-    success: true,
-    orderNo: orderNo.toString().trim(),
-    code: card.code,
-    guide: '使用说明：\n\n1. 打开 openai.com 注册账号\n2. 选择对应国家，输入手机号\n3. 回到 ' + (process.env.SITE_URL || 'https://first-money.onrender.com') + ' 输入订单号查看验证码\n\n如遇问题请联系客服。',
-  });
   } catch (e) {
     res.json({ success: false, error: e.message });
   }
