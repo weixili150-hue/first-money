@@ -178,6 +178,7 @@ async function redeemCard(code) {
       const country = getCountryInfo(card.country_id || 0);
       return {
         success: true,
+        code,
         resumed: true,
         smsCode: card.sms_code,
         phoneNumber: card.phone_number,
@@ -185,7 +186,7 @@ async function redeemCard(code) {
       };
     }
     // 超过10分钟，也返回码（但标记过期）
-    return { success: true, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, expired: true };
+    return { success: true, code, resumed: true, smsCode: card.sms_code, phoneNumber: card.phone_number, expired: true };
   }
 
   // 活跃中 → 恢复进度
@@ -196,6 +197,7 @@ async function redeemCard(code) {
       const country = getCountryInfo(card.country_id || 0);
       return {
         success: true,
+        code,
         resumed: true,
         phoneNumber: card.phone_number,
         activationId: card.activation_id,
@@ -247,6 +249,7 @@ async function redeemCard(code) {
 
   return {
     success: true,
+    code,
     phoneNumber: result.phoneNumber,
     activationId: result.activationId,
     country,

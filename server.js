@@ -123,7 +123,7 @@ if (DEMO_MODE) {
       used_at: new Date().toISOString(),
     });
 
-    res.json({ success: true, phoneNumber, activationId: 'demo_id', country: countryInfo });
+    res.json({ success: true, code: code.trim().toUpperCase(), phoneNumber, activationId: 'demo_id', country: countryInfo });
   });
 
   app.get('/api/status/:code', (req, res) => {

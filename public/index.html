@@ -330,7 +330,7 @@ async function doRedeem() {
 
   if (res.success && res.smsCode) {
     // 已有验证码，直接显示
-    currentCode = code;
+    currentCode = res.code || input.toUpperCase();
     hide($('inputCard'));
     showCode(res.smsCode, res.phoneNumber, res.country);
     $('redeemBtn').disabled = false;
@@ -339,7 +339,7 @@ async function doRedeem() {
   }
 
   if (res.success && res.phoneNumber) {
-    currentCode = code;
+    currentCode = res.code || input.toUpperCase();
     $('phoneDisplay').textContent = res.phoneNumber;
     // 更新国家信息
     if (res.country) {
