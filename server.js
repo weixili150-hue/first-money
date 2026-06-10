@@ -560,3 +560,4 @@ setInterval(() => {
     db.getDb().prepare("DELETE FROM country_failures WHERE created_at < datetime('now', '-24 hours')").run();
   } catch (e) { /* 静默 */ }
 }, 3600000);
+// deploy trigger 2026年 6月10日 星期三 12时04分41秒 CST
