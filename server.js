@@ -171,6 +171,47 @@ if (DEMO_MODE) {
 
     res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: ci });
   });
+
+  app.post('/api/timeout', (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: '缺少卡密' });
+    const card = getCardByCode(code.trim().toUpperCase());
+    if (!card || !card.activation_id) return res.json({ success: false, error: '无激活记录' });
+
+    const replaceCount = card.replace_count || 0;
+    if (replaceCount >= 3) {
+      return res.json({ success: false, error: '该卡密已更换多次，请联系客服处理' });
+    }
+
+    const config = getConfig();
+    let countryId = config.country_id || 33;
+    let prefix = '+57';
+    if (config.countries_config && Array.isArray(config.countries_config) && config.countries_config.length > 0) {
+      countryId = config.countries_config[0].country_id;
+    }
+    const ci = getCountryInfo(countryId);
+    prefix = ci.code;
+
+    const newPhone = prefix + ' 3' + Math.floor(Math.random() * 1000000000).toString().padStart(9, '0');
+    demoStore.set(code.trim().toUpperCase(), {
+      phoneNumber: newPhone,
+      purchasedAt: Date.now(),
+      smsCode: Math.floor(100000 + Math.random() * 900000).toString(),
+    });
+
+    const db = require('./db');
+    db.updateCard(card.id, {
+      activation_id: 'demo_' + Date.now(),
+      phone_number: newPhone,
+      country_id: countryId,
+      price: (config.countries_config && config.countries_config.length > 0) ? config.countries_config[0].max_price : (config.max_price || 0.05),
+      replace_count: replaceCount + 1,
+      sms_code: null,
+      purchased_at: new Date().toISOString(),
+    });
+
+    res.json({ success: true, replaced: true, phoneNumber: newPhone, activationId: 'demo_id', country: ci });
+  });
 }
 
 // ---- 管理后台鉴权中间件 ----
