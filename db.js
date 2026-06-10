@@ -93,8 +93,18 @@ function getConfig() {
   if (row && row.countries_config) {
     try { row.countries_config = JSON.parse(row.countries_config); } catch (e) { row.countries_config = []; }
   } else {
-    row.countries_config = [];
+    row = { ...row, countries_config: [] };
   }
+
+  // 环境变量覆盖数据库值（用于 Render 等部署平台，避免重新部署丢配置）
+  if (process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
+  if (process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
+  if (process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID);
+  if (process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE);
+  if (process.env.COUNTRIES_CONFIG) {
+    try { row.countries_config = JSON.parse(process.env.COUNTRIES_CONFIG); } catch (e) {}
+  }
+
   return row;
 }
 
