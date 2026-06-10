@@ -288,10 +288,19 @@ function $(id) { return document.getElementById(id); }
 function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 
-async function api(url, body) {
+async function api(url, body, timeoutMs = 15000) {
   const opts = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
-  const res = await fetch(url, opts);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...opts, signal: controller.signal });
+    clearTimeout(timer);
+    return res.json();
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') return { error: '请求超时，请检查网络后重试' };
+    return { error: '网络错误，请重试' };
+  }
 }
 
 // ---- 清理所有定时器 ----
@@ -324,6 +333,8 @@ async function doRedeem() {
     currentCode = code;
     hide($('inputCard'));
     showCode(res.smsCode, res.phoneNumber, res.country);
+    $('redeemBtn').disabled = false;
+    $('redeemBtn').textContent = '确认兑换';
     return;
   }
 
@@ -338,6 +349,8 @@ async function doRedeem() {
     // 重置提示文字
     $('phoneHint').innerHTML = '<b>操作步骤：</b><br>1️⃣ 在 OpenAI 注册页选择国家 <b id="countryName">' + (res.country ? res.country.name : '') + '</b><br>2️⃣ 输入上方手机号，点击「发送验证码」<br>3️⃣ 回到本页面，点击下方按钮';
     $('phoneHint').style.color = '#777';
+    $('redeemBtn').disabled = false;
+    $('redeemBtn').textContent = '确认兑换';
     hide($('inputCard'));
 
     if (res.verifyStarted) {
