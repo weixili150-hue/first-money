@@ -160,14 +160,14 @@ body {
 <body>
 <div class="container">
   <div class="header">
-    <p>输入您的兑换码以获取验证服务</p>
+    <p>输入卡密，获取 OpenAI 验证码</p>
   </div>
 
   <!-- 输入卡密 -->
   <div class="card" id="inputCard">
     <div class="input-group">
-      <label>兑换码 或 闲鱼订单号</label>
-      <input type="text" id="codeInput" placeholder="输入兑换码或闲鱼订单号" maxlength="30" autocomplete="off">
+      <label>卡密</label>
+      <input type="text" id="codeInput" placeholder="输入卡密，如 FM-XXXX-XXXX-XXXX" maxlength="30" autocomplete="off">
     </div>
     <button class="btn btn-primary" id="redeemBtn" onclick="doRedeem()">确认兑换</button>
   </div>
@@ -318,14 +318,12 @@ function clearTimers() {
 // ---- 兑换卡密 ----
 async function doRedeem() {
   const input = $('codeInput').value.trim();
-  if (!input) return showToast('请输入兑换码或订单号');
+  if (!input) return showToast('请输入卡密');
 
   $('redeemBtn').disabled = true;
   $('redeemBtn').textContent = '处理中...';
 
-  // 自动识别是卡密还是订单号（FM- 开头为卡密，否则为订单号）
-  const isCardCode = input.toUpperCase().startsWith('FM-');
-  const payload = isCardCode ? { code: input.toUpperCase() } : { orderNo: input };
+  const payload = { code: input.toUpperCase() };
   const res = await api('/api/redeem', payload);
 
   if (res.success && res.smsCode) {
