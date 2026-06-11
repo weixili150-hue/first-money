@@ -147,18 +147,23 @@ td { color: #ccc; }
       <div id="bindResult" style="margin-top:12px;"></div>
     </div>
 
-    <!-- 生成卡密 -->
+    <!-- 生成卡密（易店专用） -->
     <div class="card">
-      <h2>生成卡密</h2>
-      <div class="input-row">
-        <label>数量</label>
-        <input type="number" id="countInput" value="10" min="1" max="500">
+      <h2>🎫 生成卡密 · 导入易店</h2>
+      <div style="font-size:12px;color:#888;margin-bottom:12px;">
+        生成卡密 → 一键复制 → 粘贴到易店「卡密仓库」→ 绑定商品 → 自动发货
       </div>
-      <button class="btn btn-primary" onclick="generateCards()">生成</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn btn-primary" onclick="generateCards(5)">+5 个</button>
+        <button class="btn btn-primary" onclick="generateCards(10)">+10 个</button>
+        <button class="btn btn-primary" onclick="generateCards(20)">+20 个</button>
+        <button class="btn btn-primary" onclick="generateCards(50)">+50 个</button>
+      </div>
       <div id="generatedCodes" class="code-list hidden"></div>
-      <div style="margin-top:8px;display:flex;gap:8px;">
-        <button class="btn btn-outline btn-sm hidden" id="copyBtn" onclick="copyCodes()">一键复制</button>
-        <button class="btn btn-outline btn-sm hidden" id="exportBtn" onclick="exportCards()">导出未使用卡密</button>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-outline btn-sm hidden" id="copyBtn" onclick="copyCodes()">📋 一键复制（导入易店）</button>
+        <button class="btn btn-outline btn-sm hidden" id="downloadBtn" onclick="downloadCodes()">⬇ 下载 .txt</button>
+        <span id="genCount" style="font-size:12px;color:#888;"></span>
       </div>
     </div>
 
@@ -307,30 +312,40 @@ async function saveConfig() {
   }
 }
 
-async function generateCards() {
-  const count = parseInt($('countInput').value);
+let lastGeneratedCodes = [];
+
+async function generateCards(count) {
   if (!count || count < 1 || count > 500) return showToast('数量应在 1-500 之间');
 
   const res = await api('/api/admin/cards', { count });
   if (res.error) return showToast(res.error);
 
+  lastGeneratedCodes = res.codes;
+
   const list = $('generatedCodes');
   list.innerHTML = res.codes.map(c => `<code>${c}</code>`).join('');
   list.classList.remove('hidden');
   $('copyBtn').classList.remove('hidden');
-  $('exportBtn').classList.remove('hidden');
+  $('downloadBtn').classList.remove('hidden');
+  $('genCount').textContent = `已生成 ${res.codes.length} 张卡密，可直接粘贴到易店「卡密仓库」`;
+  showToast(`✅ 已生成 ${res.codes.length} 张卡密`);
 }
 
 function copyCodes() {
-  const text = $('generatedCodes').innerText;
-  navigator.clipboard.writeText(text).then(() => showToast('已复制到剪贴板'));
+  const text = lastGeneratedCodes.join('\n');
+  navigator.clipboard.writeText(text).then(() => showToast('✅ 已复制！去易店「卡密仓库」→ 批量导入 → 粘贴即可'));
 }
 
-async function exportCards() {
-  const res = await fetch('/api/admin/cards/export', { headers: { 'x-admin-password': token } });
-  const text = await res.text();
-  if (!text.trim()) return showToast('没有未使用的卡密');
-  navigator.clipboard.writeText(text).then(() => showToast('已复制 ' + text.split('\n').length + ' 个卡密'));
+function downloadCodes() {
+  const text = lastGeneratedCodes.join('\n');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `卡密_${new Date().toISOString().slice(0, 10)}_${lastGeneratedCodes.length}张.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('⬇ 已下载，文件可直接导入易店');
 }
 
 async function loadOrders() {
