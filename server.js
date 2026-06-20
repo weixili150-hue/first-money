@@ -21,6 +21,7 @@ const {
   requestReplaceNumber,
   processPendingRefunds,
   autoRefundIdleCards,
+  invalidatePriceCache,
   COOLDOWN_MS,
 } = require('./card-service');
 
@@ -395,6 +396,7 @@ app.post('/api/admin/config', requireAdmin, (req, res) => {
     max_price: parseFloat(max_price) || 0,
     countries_config: countries_config || undefined,
   });
+  invalidatePriceCache(); // 配置变更后立即清除价格缓存
   res.json(config);
 });
 

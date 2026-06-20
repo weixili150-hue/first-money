@@ -294,12 +294,17 @@ async function loadConfig() {
 }
 
 async function saveConfig() {
+  // 清理 countries_config，只保留 country_id 和 max_price，防止字段污染
+  const cleanCountries = currentCountries.map(c => ({
+    country_id: c.country_id,
+    max_price: c.max_price,
+  }));
   const res = await api('/api/admin/config', {
     hero_api_key: $('apiKeyInput').value,
     service_code: $('serviceInput').value,
-    country_id: currentCountries.length > 0 ? currentCountries[0].country_id : 0,
-    max_price: currentCountries.length > 0 ? currentCountries[0].max_price : 0,
-    countries_config: currentCountries,
+    country_id: cleanCountries.length > 0 ? cleanCountries[0].country_id : 0,
+    max_price: cleanCountries.length > 0 ? cleanCountries[0].max_price : 0,
+    countries_config: cleanCountries,
   });
   const msg = $('configMsg');
   if (res.error) {
