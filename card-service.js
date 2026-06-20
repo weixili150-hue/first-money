@@ -6,23 +6,36 @@ const POLL_INTERVAL = 5000;
 // 退款冷静期（毫秒）
 const COOLDOWN_MS = 120 * 1000; // 2 分钟
 
-// 国家信息映射
+// 国家信息映射（基于 HeroSMS getCountries API 返回值）
 const COUNTRIES = {
-  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
+  1:  { flag: '🇺🇦', name: '乌克兰', code: '+380' },
   2:  { flag: '🇰🇿', name: '哈萨克斯坦', code: '+7' },
-  12: { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
-  6:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
-  3:  { flag: '🇻🇳', name: '越南', code: '+84' },
-  16: { flag: '🇲🇾', name: '马来西亚', code: '+60' },
-  22: { flag: '🇹🇭', name: '泰国', code: '+66' },
-  11: { flag: '🇧🇷', name: '巴西', code: '+55' },
-  14: { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
-  9:  { flag: '🇪🇬', name: '埃及', code: '+20' },
-  43: { flag: '🇬🇧', name: '英国', code: '+44' },
-  21: { flag: '🇮🇳', name: '印度', code: '+91' },
-  42: { flag: '🇲🇽', name: '墨西哥', code: '+52' },
-  34: { flag: '🇦🇷', name: '阿根廷', code: '+54' },
+  4:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
+  6:  { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
+  7:  { flag: '🇲🇾', name: '马来西亚', code: '+60' },
+  8:  { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
+  10: { flag: '🇻🇳', name: '越南', code: '+84' },
+  11: { flag: '🇰🇬', name: '吉尔吉斯斯坦', code: '+996' },
+  14: { flag: '🇭🇰', name: '香港', code: '+852' },
+  15: { flag: '🇵🇱', name: '波兰', code: '+48' },
+  16: { flag: '🇬🇧', name: '英国', code: '+44' },
   19: { flag: '🇳🇬', name: '尼日利亚', code: '+234' },
+  21: { flag: '🇪🇬', name: '埃及', code: '+20' },
+  22: { flag: '🇮🇳', name: '印度', code: '+91' },
+  31: { flag: '🇿🇦', name: '南非', code: '+27' },
+  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
+  36: { flag: '🇨🇦', name: '加拿大', code: '+1' },
+  39: { flag: '🇦🇷', name: '阿根廷', code: '+54' },
+  43: { flag: '🇩🇪', name: '德国', code: '+49' },
+  52: { flag: '🇹🇭', name: '泰国', code: '+66' },
+  54: { flag: '🇲🇽', name: '墨西哥', code: '+52' },
+  62: { flag: '🇹🇷', name: '土耳其', code: '+90' },
+  73: { flag: '🇧🇷', name: '巴西', code: '+55' },
+  78: { flag: '🇫🇷', name: '法国', code: '+33' },
+  86: { flag: '🇮🇹', name: '意大利', code: '+39' },
+  182:{ flag: '🇯🇵', name: '日本', code: '+81' },
+  187:{ flag: '🇺🇸', name: '美国', code: '+1' },
+  196:{ flag: '🇸🇬', name: '新加坡', code: '+65' },
 };
 
 function getCountryInfo(countryId) {
@@ -33,7 +46,13 @@ function getCountryInfo(countryId) {
 function detectCountryByPhone(phone) {
   if (!phone) return null;
   const clean = phone.replace(/[\s\-()]+/g, '');
-  const prefixMap = { '44': 43, '91': 21, '62': 12, '63': 6, '84': 3, '60': 16, '66': 22, '55': 11, '254': 14, '20': 9, '57': 33, '7': 2, '52': 42, '54': 34, '234': 19 };
+  const prefixMap = {
+    '996': 11, '380': 1, '254': 8, '234': 19, '852': 14,
+    '351': 117, '90': 62, '91': 22, '84': 10, '81': 182,
+    '66': 52, '65': 196, '63': 4, '62': 6, '60': 7, '57': 33,
+    '55': 73, '54': 39, '52': 54, '49': 43, '48': 15, '44': 16,
+    '39': 86, '33': 78, '27': 31, '20': 21, '7': 2, '1': 36,
+  };
   const keys = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
   for (const prefix of keys) {
     if (clean.startsWith(prefix)) return getCountryInfo(prefixMap[prefix]);
@@ -41,11 +60,11 @@ function detectCountryByPhone(phone) {
   return null;
 }
 
-// 格式化手机号：447549881566 → 7549881566（去前缀，国家在badge显示）
+// 格式化手机号：447549881566 → 7549881566（去国家前缀，国家在badge显示）
 function formatPhoneNumber(phone) {
   if (!phone) return phone;
   const clean = phone.replace(/[\s\-()]+/g, '');
-  const prefixMap = { '254': 3, '234': 3, '44': 2, '91': 2, '62': 2, '63': 2, '84': 2, '60': 2, '66': 2, '55': 2, '20': 2, '57': 2, '7': 1, '52': 2, '54': 2 };
+  const prefixMap = { '996': 3, '380': 3, '254': 3, '234': 3, '852': 3, '351': 3, '90': 2, '91': 2, '84': 2, '81': 2, '66': 2, '65': 2, '63': 2, '62': 2, '60': 2, '57': 2, '55': 2, '54': 2, '52': 2, '49': 2, '48': 2, '44': 2, '39': 2, '33': 2, '27': 2, '20': 2, '7': 1, '1': 1 };
   const keys = Object.keys(prefixMap).sort((a, b) => b.length - a.length);
   for (const prefix of keys) {
     if (clean.startsWith(prefix)) {

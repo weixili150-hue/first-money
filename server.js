@@ -30,18 +30,36 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
-// 国家信息映射
+// 国家信息映射（基于 HeroSMS getCountries API 返回值）
 const COUNTRIES = {
-  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
+  1:  { flag: '🇺🇦', name: '乌克兰', code: '+380' },
   2:  { flag: '🇰🇿', name: '哈萨克斯坦', code: '+7' },
-  12: { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
-  6:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
-  3:  { flag: '🇻🇳', name: '越南', code: '+84' },
-  16: { flag: '🇲🇾', name: '马来西亚', code: '+60' },
-  22: { flag: '🇹🇭', name: '泰国', code: '+66' },
-  11: { flag: '🇧🇷', name: '巴西', code: '+55' },
-  14: { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
-  9:  { flag: '🇪🇬', name: '埃及', code: '+20' },
+  4:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
+  6:  { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
+  7:  { flag: '🇲🇾', name: '马来西亚', code: '+60' },
+  8:  { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
+  10: { flag: '🇻🇳', name: '越南', code: '+84' },
+  11: { flag: '🇰🇬', name: '吉尔吉斯斯坦', code: '+996' },
+  14: { flag: '🇭🇰', name: '香港', code: '+852' },
+  15: { flag: '🇵🇱', name: '波兰', code: '+48' },
+  16: { flag: '🇬🇧', name: '英国', code: '+44' },
+  19: { flag: '🇳🇬', name: '尼日利亚', code: '+234' },
+  21: { flag: '🇪🇬', name: '埃及', code: '+20' },
+  22: { flag: '🇮🇳', name: '印度', code: '+91' },
+  31: { flag: '🇿🇦', name: '南非', code: '+27' },
+  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
+  36: { flag: '🇨🇦', name: '加拿大', code: '+1' },
+  39: { flag: '🇦🇷', name: '阿根廷', code: '+54' },
+  43: { flag: '🇩🇪', name: '德国', code: '+49' },
+  52: { flag: '🇹🇭', name: '泰国', code: '+66' },
+  54: { flag: '🇲🇽', name: '墨西哥', code: '+52' },
+  62: { flag: '🇹🇷', name: '土耳其', code: '+90' },
+  73: { flag: '🇧🇷', name: '巴西', code: '+55' },
+  78: { flag: '🇫🇷', name: '法国', code: '+33' },
+  86: { flag: '🇮🇹', name: '意大利', code: '+39' },
+  182:{ flag: '🇯🇵', name: '日本', code: '+81' },
+  187:{ flag: '🇺🇸', name: '美国', code: '+1' },
+  196:{ flag: '🇸🇬', name: '新加坡', code: '+65' },
 };
 
 function getCountryInfo(countryId) {
@@ -52,48 +70,14 @@ function getCountryInfo(countryId) {
 function detectCountryByPhone(phone) {
   if (!phone) return null;
   const clean = phone.replace(/[\s\-()]+/g, '');
-  // 按前缀长度从长到短匹配
+  // 按前缀长度从长到短匹配（基于 HeroSMS 国家映射）
   const prefixMap = [
-    [7, 2], [20, 9], [27, null], [30, null], [31, null], [32, null],
-    [33, null], [34, 34], [36, null], [39, null], [40, null], [41, null],
-    [43, null], [44, 43], [45, null], [46, null], [47, null], [48, null],
-    [49, null], [51, null], [52, 42], [53, null], [54, 34], [55, 11],
-    [56, null], [57, 33], [58, null], [60, 16], [61, null], [62, 12],
-    [63, 6], [64, null], [65, null], [66, 22], [81, null], [82, null],
-    [84, 3], [86, null], [90, null], [91, 21], [92, null], [93, null],
-    [94, null], [95, null], [98, null], [212, null], [213, null],
-    [216, null], [218, null], [220, null], [221, null], [222, null],
-    [223, null], [224, null], [225, null], [226, null], [227, null],
-    [228, null], [229, null], [230, null], [231, null], [232, null],
-    [233, null], [234, 19], [235, null], [236, null], [237, null],
-    [238, null], [239, null], [240, null], [241, null], [242, null],
-    [243, null], [244, null], [245, null], [246, null], [247, null],
-    [248, null], [249, null], [250, null], [251, null], [252, null],
-    [253, null], [254, 14], [255, null], [256, null], [257, null],
-    [258, null], [260, null], [261, null], [262, null], [263, null],
-    [264, null], [265, null], [266, null], [267, null], [268, null],
-    [269, null], [290, null], [291, null], [297, null], [298, null],
-    [299, null], [350, null], [351, null], [352, null], [353, null],
-    [354, null], [355, null], [356, null], [357, null], [358, null],
-    [359, null], [370, null], [371, null], [372, null], [373, null],
-    [374, null], [375, null], [376, null], [377, null], [378, null],
-    [380, null], [381, null], [382, null], [383, null], [385, null],
-    [386, null], [387, null], [389, null], [420, null], [421, null],
-    [423, null], [500, null], [501, null], [502, null], [503, null],
-    [504, null], [505, null], [506, null], [507, null], [508, null],
-    [509, null], [590, null], [591, null], [592, null], [593, null],
-    [594, null], [595, null], [596, null], [597, null], [598, null],
-    [599, null], [670, null], [672, null], [673, null], [674, null],
-    [675, null], [676, null], [677, null], [678, null], [679, null],
-    [680, null], [681, null], [682, null], [683, null], [685, null],
-    [686, null], [687, null], [688, null], [689, null], [690, null],
-    [691, null], [692, null], [850, null], [852, null], [853, null],
-    [855, null], [856, null], [880, null], [886, null], [960, null],
-    [961, null], [962, null], [963, null], [964, null], [965, null],
-    [966, null], [967, null], [968, null], [970, null], [971, null],
-    [972, null], [973, null], [974, null], [975, null], [976, null],
-    [977, null], [992, null], [993, null], [994, null], [995, null],
-    [996, null], [998, null],
+    [996, 11], [380, 1], [254, 8], [234, 19], [852, 14],
+    [351, 117], [90, 62], [91, 22], [84, 10], [86, null], [81, 182],
+    [66, 52], [65, 196], [63, 4], [62, 6], [60, 7], [57, 33],
+    [55, 73], [54, 39], [52, 54], [49, 43], [48, 15], [44, 16],
+    [39, 86], [36, null], [33, 78], [31, null], [27, 31],
+    [20, 21], [7, 2], [1, 36],
   ];
   for (const [prefix, countryId] of prefixMap) {
     if (clean.startsWith(String(prefix)) && countryId) {
@@ -483,9 +467,12 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
 
   // 国家名称映射
   const countryMap = {
-    33:'哥伦比亚',2:'哈萨克斯坦',12:'印度尼西亚',6:'菲律宾',
-    3:'越南',16:'马来西亚',22:'泰国',11:'巴西',14:'肯尼亚',
-    9:'埃及',43:'英国',21:'印度',42:'墨西哥',34:'阿根廷',19:'尼日利亚'
+    1:'乌克兰',2:'哈萨克斯坦',4:'菲律宾',6:'印度尼西亚',7:'马来西亚',
+    8:'肯尼亚',10:'越南',11:'吉尔吉斯斯坦',14:'香港',15:'波兰',
+    16:'英国',19:'尼日利亚',21:'埃及',22:'印度',31:'南非',
+    33:'哥伦比亚',36:'加拿大',39:'阿根廷',43:'德国',52:'泰国',
+    54:'墨西哥',62:'土耳其',73:'巴西',78:'法国',86:'意大利',
+    182:'日本',187:'美国',196:'新加坡'
   };
 
   res.json({
