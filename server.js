@@ -607,4 +607,4 @@ setInterval(() => {
     db.getDb().prepare("DELETE FROM country_failures WHERE created_at < datetime('now', '-24 hours')").run();
   } catch (e) { /* 静默 */ }
 }, 3600000);
-// deploy trigger 2026年 6月20日 星期六 修复价格缓存+parsePrices格式
+// deploy trigger 2026年6月20日 修正HeroSMS国家ID映射
