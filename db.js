@@ -127,13 +127,12 @@ function getConfig() {
     row.countries_config = [];
   }
 
-  // HERO_API_KEY 始终以环境变量为准（不在 config.json 中提交，安全且重启不丢）
+  // 环境变量始终优先（Render 上唯一持久存储，重启/部署都不丢）
   if (process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
-  // 其他字段：数据库为空时才用环境变量作为初始值
-  if (!row.service_code && process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
-  if (!row.country_id && process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID);
-  if (!row.max_price && process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE);
-  if (row.countries_config.length === 0 && process.env.COUNTRIES_CONFIG) {
+  if (process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
+  if (process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID) || 0;
+  if (process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE) || 0;
+  if (process.env.COUNTRIES_CONFIG) {
     try { row.countries_config = JSON.parse(process.env.COUNTRIES_CONFIG); } catch (e) {}
   }
 

@@ -315,7 +315,14 @@ app.post('/api/admin/login', (req, res) => {
 
 // 获取配置
 app.get('/api/admin/config', requireAdmin, (req, res) => {
-  res.json(getConfig());
+  const config = getConfig();
+  // 告知前端哪些字段来自 Render 环境变量（永久存储）
+  config._env = {
+    hero_api_key: !!process.env.HERO_API_KEY,
+    service_code: !!process.env.SERVICE_CODE,
+    countries_config: !!process.env.COUNTRIES_CONFIG,
+  };
+  res.json(config);
 });
 
 // 更新配置

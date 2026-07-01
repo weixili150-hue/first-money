@@ -133,6 +133,7 @@ td { color: #ccc; }
       <button class="btn btn-outline btn-sm" onclick="addCountry()" style="width:auto;margin-top:8px;">+ 添加国家</button>
       <button class="btn btn-primary" onclick="saveConfig()" style="margin-top:12px;">保存配置</button>
       <div id="configMsg"></div>
+      <div id="envHint" style="margin-top:8px;font-size:11px;color:#666;line-height:1.6;"></div>
     </div>
 
     <!-- 闲鱼发货 -->
@@ -296,6 +297,16 @@ async function loadConfig() {
       currentCountries = [];
     }
     renderCountries();
+    // 显示哪些字段来自 Render 环境变量（永久存储）
+    const envFields = [];
+    if (res._env) {
+      if (res._env.hero_api_key) envFields.push('API Key');
+      if (res._env.service_code) envFields.push('服务代码');
+      if (res._env.countries_config) envFields.push('国家配置');
+    }
+    $('envHint').innerHTML = envFields.length > 0
+      ? '🟢 以下字段来自 <b>Render 环境变量</b>（永久存储，重启不丢）：' + envFields.join('、')
+      : '🟡 配置保存在 <b>数据库</b> 中，Render 重启后会从 config.json 恢复';
   } catch(e) {
     console.error('loadConfig 异常:', e);
     showToast('加载配置异常，请刷新页面重试');
