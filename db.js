@@ -86,6 +86,31 @@ function initTables() {
   const row = d.prepare('SELECT id FROM configs').get();
   if (!row) {
     d.prepare("INSERT INTO configs (id, hero_api_key, service_code, country_id, max_price) VALUES (1, '', '', 0, 0)").run();
+    // Render 免费版重启会清空 data/ 目录，从 git 提交的 config.json 恢复配置
+    loadFromConfigJson(d);
+  }
+}
+
+// 从 config.json 加载初始配置（应对 Render 免费版文件系统丢失）
+function loadFromConfigJson(d) {
+  const configPath = path.join(__dirname, 'config.json');
+  if (!fs.existsSync(configPath)) return;
+  try {
+    const json = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    const countriesJson = json.countries_config ? JSON.stringify(json.countries_config) : '[]';
+    d.prepare(`
+      UPDATE configs
+      SET service_code = ?, country_id = ?, max_price = ?, countries_config = ?
+      WHERE id = 1
+    `).run(
+      json.service_code || '',
+      json.country_id || 0,
+      json.max_price || 0,
+      countriesJson
+    );
+    console.log('[config.json] 已从 config.json 加载初始配置');
+  } catch (e) {
+    console.error('[config.json] 加载失败:', e.message);
   }
 }
 
@@ -102,8 +127,9 @@ function getConfig() {
     row.countries_config = [];
   }
 
-  // 环境变量仅作初始值：数据库为空时才用环境变量（适合 Render 首次部署）
-  if (!row.hero_api_key && process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
+  // HERO_API_KEY 始终以环境变量为准（不在 config.json 中提交，安全且重启不丢）
+  if (process.env.HERO_API_KEY) row.hero_api_key = process.env.HERO_API_KEY;
+  // 其他字段：数据库为空时才用环境变量作为初始值
   if (!row.service_code && process.env.SERVICE_CODE) row.service_code = process.env.SERVICE_CODE;
   if (!row.country_id && process.env.COUNTRY_ID) row.country_id = parseInt(process.env.COUNTRY_ID);
   if (!row.max_price && process.env.MAX_PRICE) row.max_price = parseFloat(process.env.MAX_PRICE);

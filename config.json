@@ -1,0 +1,19 @@
+{
+  "service_code": "dr",
+  "country_id": 33,
+  "max_price": 0.05,
+  "countries_config": [
+    {
+      "country_id": 33,
+      "max_price": 0.05
+    },
+    {
+      "country_id": 43,
+      "max_price": 0.0343
+    },
+    {
+      "country_id": 11,
+      "max_price": 0.05
+    }
+  ]
+}
