@@ -321,11 +321,13 @@ app.get('/api/admin/config', requireAdmin, (req, res) => {
 // 更新配置
 app.post('/api/admin/config', requireAdmin, (req, res) => {
   const { hero_api_key, service_code, country_id, max_price, countries_config } = req.body;
-  if (!hero_api_key || !service_code) {
-    return res.status(400).json({ error: 'API Key 和服务代码为必填' });
+  // API Key 可能在环境变量中（不随 Render 重启丢失），表单可为空
+  const effectiveApiKey = hero_api_key || process.env.HERO_API_KEY || '';
+  if (!effectiveApiKey || !service_code) {
+    return res.status(400).json({ error: 'API Key 和服务代码为必填（API Key 可在 Render 环境变量中设置）' });
   }
   const config = updateConfig({
-    hero_api_key,
+    hero_api_key: effectiveApiKey,
     service_code,
     country_id: parseInt(country_id) || 0,
     max_price: parseFloat(max_price) || 0,
