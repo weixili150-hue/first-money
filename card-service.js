@@ -39,7 +39,8 @@ const COUNTRIES = {
 };
 
 function getCountryInfo(countryId) {
-  return COUNTRIES[countryId] || { flag: '🌍', name: '国家' + countryId, code: '' };
+  if (!countryId || !COUNTRIES[countryId]) return { flag: '🌍', name: '未知', code: '' };
+  return COUNTRIES[countryId];
 }
 
 // 根据手机号前缀推断真实国家
@@ -160,6 +161,8 @@ async function tryBuyNumber(config) {
   // 按价格全球排序，同价格随机（避免总让一个国家扛）
   allTiers.sort((a, b) => a.price - b.price || Math.random() - 0.5);
 
+  let lastError = 'NO_NUMBERS';
+
   // 逐个尝试
   for (const tier of allTiers) {
     if (isPriceInCooldown(tier.country_id, tier.price)) {
@@ -167,29 +170,58 @@ async function tryBuyNumber(config) {
       continue;
     }
 
-    console.log(`[购买] 尝试 ${tier.country_name}(${tier.country_id}) $${tier.price}`);
-    const result = await getNumber(config.hero_api_key, {
+    // 价格加 20% buffer：HeroSMS 的 getPrices 返回的价格可能比实际最低价低
+    // 例如返回 cost=0.05 但 getNumber 需要 maxPrice>=0.055
+    const buyPrice = Math.ceil(tier.price * 1.2 * 1000) / 1000; // 上取整到 0.001
+
+    console.log(`[购买] 尝试 ${tier.country_name}(${tier.country_id}) 价位$${tier.price} 出价$${buyPrice}`);
+    let result = await getNumber(config.hero_api_key, {
       service: config.service_code,
       country: tier.country_id,
-      maxPrice: tier.price,
+      maxPrice: buyPrice,
     });
 
+    // 处理 WRONG_MAX_PRICE：API 告诉我们正确的最低价
+    if (result.error && result.error.startsWith('WRONG_MAX_PRICE:')) {
+      const suggestedPrice = parseFloat(result.error.split(':')[1]);
+      if (suggestedPrice > 0) {
+        console.log(`[购买] 🔄 价格过低，HeroSMS 要求最低 $${suggestedPrice}，用新价格重试`);
+        result = await getNumber(config.hero_api_key, {
+          service: config.service_code,
+          country: tier.country_id,
+          maxPrice: suggestedPrice,
+        });
+      }
+    }
+
     if (!result.error) {
-      console.log(`[购买] ✅ 成功 ${tier.country_name} $${tier.price}`);
+      const actualPrice = result.price || buyPrice;
+      console.log(`[购买] ✅ 成功 ${tier.country_name} $${actualPrice}`);
       clearCountryFailures(tier.country_id, tier.price);
-      return { ...result, countryId: tier.country_id, price: tier.price };
+      return { ...result, countryId: tier.country_id, price: actualPrice };
     }
 
     console.log(`[购买] ❌ ${tier.country_name} $${tier.price} 失败: ${result.error}`);
-    if (result.error === 'NO_NUMBERS') {
-      recordCountryFailure(tier.country_id, tier.price, 'no_numbers');
-      invalidatePriceCache(); // 缓存可能不准确了，下次重查
-    } else if (result.error === 'NO_BALANCE') {
+    lastError = result.error;
+
+    if (result.error === 'NO_BALANCE') {
       return { error: 'NO_BALANCE' };
     }
+
+    // 记录失败（NO_NUMBERS 和 WRONG_MAX_PRICE 等都记录）
+    if (result.error === 'NO_NUMBERS' || result.error.startsWith('WRONG_MAX_PRICE')) {
+      recordCountryFailure(tier.country_id, tier.price, 'no_numbers');
+    } else {
+      recordCountryFailure(tier.country_id, tier.price, 'other');
+    }
+    invalidatePriceCache(); // 缓存可能不准确了，下次重查
   }
 
-  return { error: 'NO_NUMBERS' };
+  // 返回真实的最后一个错误，而不是统一伪装成 NO_NUMBERS
+  if (lastError === 'NO_NUMBERS' || lastError.startsWith('WRONG_MAX_PRICE')) {
+    return { error: 'NO_NUMBERS' };
+  }
+  return { error: lastError };
 }
 
 function getMinMaxPrice(config) {
@@ -277,7 +309,8 @@ async function redeemCard(code) {
   if (result.error) {
     if (result.error === 'NO_NUMBERS') return { success: false, error: '当前所有国家号码售罄，请稍后再试' };
     if (result.error === 'NO_BALANCE') return { success: false, error: '系统余额不足，请联系管理员' };
-    return { success: false, error: `购买号码失败: ${result.error}` };
+    if (result.error.startsWith('WRONG_MAX_PRICE')) return { success: false, error: '号码价格波动，请重试' };
+    return { success: false, error: `购买号码失败(${result.error})，请重试` };
   }
 
   // 更新卡密
@@ -489,6 +522,12 @@ async function processPendingRefunds() {
 
   const pending = getPendingRefunds();
   for (const p of pending) {
+    // 跳过演示模式的虚拟激活
+    if (p.activation_id && p.activation_id.startsWith('demo_')) {
+      console.log(`[延迟退款] 激活ID ${p.activation_id} 是演示激活，直接标记为完成`);
+      markRefundDone(p.id, 'demo_skip');
+      continue;
+    }
     const elapsed = Date.now() - new Date(p.purchased_at).getTime();
     if (elapsed < COOLDOWN_MS) continue; // 冷静期还没过
 
@@ -515,6 +554,12 @@ async function autoRefundIdleCards() {
 
   const idleCards = getIdleCards(20);
   for (const card of idleCards) {
+    // 跳过演示模式的虚拟激活（demo_ 前缀），这些不是真实 HeroSMS 激活
+    if (card.activation_id && card.activation_id.startsWith('demo_')) {
+      console.log(`[空闲退款] 卡密 ${card.code} 是演示激活 ${card.activation_id}，直接重置为未使用`);
+      updateCard(card.id, { status: 'unused', activation_id: null, phone_number: null, sms_code: null, purchased_at: null, used_at: null, verify_started_at: null });
+      continue;
+    }
     console.log(`[空闲退款] 卡密 ${card.code} 超过20分钟未操作，激活ID ${card.activation_id}，尝试退款...`);
     const result = await cancelActivation(config.hero_api_key, card.activation_id);
     console.log(`[空闲退款] 激活ID ${card.activation_id} 退款结果: ${result}`);
@@ -532,8 +577,9 @@ async function autoRefundIdleCards() {
         updateCard(card.id, { verify_started_at: new Date().toISOString() });
       }
     } else if (result.includes('EARLY_CANCEL_DENIED')) {
-      // 还在冷静期？不太可能但加入待退款队列
+      // 还在冷静期？加入待退款队列，标记 verify_started 防止下次重复尝试
       addPendingRefund(card.activation_id, card.purchased_at);
+      updateCard(card.id, { verify_started_at: new Date().toISOString() });
     } else {
       // 其他错误，标记 verify_started 防止反复尝试
       updateCard(card.id, { verify_started_at: new Date().toISOString() });
@@ -549,6 +595,10 @@ module.exports = {
   processPendingRefunds,
   autoRefundIdleCards,
   invalidatePriceCache,
+  getCountryInfo,
+  detectCountryByPhone,
+  formatPhoneNumber,
+  COUNTRIES,
   COOLDOWN_MS,
   POLL_INTERVAL,
 };

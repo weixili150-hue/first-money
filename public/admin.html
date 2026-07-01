@@ -143,7 +143,7 @@ td { color: #ccc; }
         <label>订单号</label>
         <input type="text" id="orderNoInput" placeholder="闲鱼订单号">
       </div>
-      <button class="btn btn-primary" onclick="bindOrder()">绑定卡密</button>
+      <button class="btn btn-primary" onclick="bindOrder(event)">绑定卡密</button>
       <div id="bindResult" style="margin-top:12px;"></div>
     </div>
 
@@ -283,11 +283,12 @@ function removeCountry(i) {
 async function loadConfig() {
   try {
     const res = await api('/api/admin/config');
+    if (res.error) { console.error('loadConfig error:', res.error); showToast('加载配置失败: ' + res.error); return; }
     $('apiKeyInput').value = res.hero_api_key || '';
     $('serviceInput').value = res.service_code || '';
-    // 加载多国配置
+    // 加载多国配置（countries_config 是权威来源）
     if (res.countries_config && Array.isArray(res.countries_config) && res.countries_config.length > 0) {
-      currentCountries = res.countries_config;
+      currentCountries = JSON.parse(JSON.stringify(res.countries_config)); // 深拷贝防止引用污染
     } else if (res.country_id > 0) {
       // 兼容旧单国配置
       currentCountries = [{ country_id: res.country_id, max_price: res.max_price }];
@@ -295,15 +296,29 @@ async function loadConfig() {
       currentCountries = [];
     }
     renderCountries();
-  } catch(e) {}
+  } catch(e) {
+    console.error('loadConfig 异常:', e);
+    showToast('加载配置异常，请刷新页面重试');
+  }
 }
 
 async function saveConfig() {
-  // 清理 countries_config，只保留 country_id 和 max_price，防止字段污染
-  const cleanCountries = currentCountries.map(c => ({
-    country_id: c.country_id,
-    max_price: c.max_price,
-  }));
+  // 直接从 DOM 读取各国配置，避免 onchange 在失焦前未触发导致保存旧值
+  const rows = $('countriesList').querySelectorAll('.country-row');
+  const cleanCountries = [];
+  rows.forEach(row => {
+    const select = row.querySelector('select');
+    const input = row.querySelector('input[type="number"]');
+    if (select && input) {
+      cleanCountries.push({
+        country_id: parseInt(select.value),
+        max_price: parseFloat(input.value),
+      });
+    }
+  });
+  // 同步回 currentCountries
+  currentCountries = cleanCountries;
+
   const res = await api('/api/admin/config', {
     hero_api_key: $('apiKeyInput').value,
     service_code: $('serviceInput').value,
@@ -318,6 +333,9 @@ async function saveConfig() {
   } else {
     msg.className = 'success-text';
     msg.textContent = '配置已保存';
+    // 保存后重新从服务器加载，确保前端状态与服务端一致
+    await loadConfig();
+    msg.textContent = '配置已保存 ✓';
     setTimeout(() => { msg.textContent = ''; }, 2000);
   }
 }
@@ -386,10 +404,10 @@ async function loadOrders() {
   $('ordersTable').innerHTML = html;
 }
 
-async function bindOrder() {
+async function bindOrder(e) {
   const orderNo = $('orderNoInput').value.trim();
   if (!orderNo) return showToast('请输入订单号');
-  const btn = event.target;
+  const btn = e.target;
   btn.disabled = true; btn.textContent = '处理中...';
   try {
     const res = await api('/api/admin/cards/bind', { orderNo });

@@ -22,6 +22,9 @@ const {
   processPendingRefunds,
   autoRefundIdleCards,
   invalidatePriceCache,
+  getCountryInfo,
+  detectCountryByPhone,
+  formatPhoneNumber,
   COOLDOWN_MS,
 } = require('./card-service');
 
@@ -30,62 +33,7 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
-// 国家信息映射（基于 HeroSMS getCountries API 返回值）
-const COUNTRIES = {
-  1:  { flag: '🇺🇦', name: '乌克兰', code: '+380' },
-  2:  { flag: '🇰🇿', name: '哈萨克斯坦', code: '+7' },
-  4:  { flag: '🇵🇭', name: '菲律宾', code: '+63' },
-  6:  { flag: '🇮🇩', name: '印度尼西亚', code: '+62' },
-  7:  { flag: '🇲🇾', name: '马来西亚', code: '+60' },
-  8:  { flag: '🇰🇪', name: '肯尼亚', code: '+254' },
-  10: { flag: '🇻🇳', name: '越南', code: '+84' },
-  11: { flag: '🇰🇬', name: '吉尔吉斯斯坦', code: '+996' },
-  14: { flag: '🇭🇰', name: '香港', code: '+852' },
-  15: { flag: '🇵🇱', name: '波兰', code: '+48' },
-  16: { flag: '🇬🇧', name: '英国', code: '+44' },
-  19: { flag: '🇳🇬', name: '尼日利亚', code: '+234' },
-  21: { flag: '🇪🇬', name: '埃及', code: '+20' },
-  22: { flag: '🇮🇳', name: '印度', code: '+91' },
-  31: { flag: '🇿🇦', name: '南非', code: '+27' },
-  33: { flag: '🇨🇴', name: '哥伦比亚', code: '+57' },
-  36: { flag: '🇨🇦', name: '加拿大', code: '+1' },
-  39: { flag: '🇦🇷', name: '阿根廷', code: '+54' },
-  43: { flag: '🇩🇪', name: '德国', code: '+49' },
-  52: { flag: '🇹🇭', name: '泰国', code: '+66' },
-  54: { flag: '🇲🇽', name: '墨西哥', code: '+52' },
-  62: { flag: '🇹🇷', name: '土耳其', code: '+90' },
-  73: { flag: '🇧🇷', name: '巴西', code: '+55' },
-  78: { flag: '🇫🇷', name: '法国', code: '+33' },
-  86: { flag: '🇮🇹', name: '意大利', code: '+39' },
-  182:{ flag: '🇯🇵', name: '日本', code: '+81' },
-  187:{ flag: '🇺🇸', name: '美国', code: '+1' },
-  196:{ flag: '🇸🇬', name: '新加坡', code: '+65' },
-};
-
-function getCountryInfo(countryId) {
-  return COUNTRIES[countryId] || { flag: '🌍', name: '未知国家', code: '' };
-}
-
-// 根据手机号前缀推断真实国家（HeroSMS返回的号码可能与请求国家不同）
-function detectCountryByPhone(phone) {
-  if (!phone) return null;
-  const clean = phone.replace(/[\s\-()]+/g, '');
-  // 按前缀长度从长到短匹配（基于 HeroSMS 国家映射）
-  const prefixMap = [
-    [996, 11], [380, 1], [254, 8], [234, 19], [852, 14],
-    [351, 117], [90, 62], [91, 22], [84, 10], [86, null], [81, 182],
-    [66, 52], [65, 196], [63, 4], [62, 6], [60, 7], [57, 33],
-    [55, 73], [54, 39], [52, 54], [49, 43], [48, 15], [44, 16],
-    [39, 86], [36, null], [33, 78], [31, null], [27, 31],
-    [20, 21], [7, 2], [1, 36],
-  ];
-  for (const [prefix, countryId] of prefixMap) {
-    if (clean.startsWith(String(prefix)) && countryId) {
-      return getCountryInfo(countryId);
-    }
-  }
-  return null;
-}
+// getCountryInfo, detectCountryByPhone, formatPhoneNumber 从 card-service 统一导入
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -280,7 +228,8 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ---- 用户 API ----
+// ---- 用户 API（生产模式，demo 模式下由上方 demo handler 处理）----
+if (!DEMO_MODE) {
 
 // 兑换卡密
 app.post('/api/redeem', async (req, res) => {
@@ -342,7 +291,9 @@ app.post('/api/timeout', async (req, res) => {
   }
 });
 
-// 标记用户已点击"我已发送验证码"
+} // end of !DEMO_MODE block
+
+// 标记用户已点击"我已发送验证码"（demo 和 生产 通用）
 app.post('/api/verify-started', (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: '缺少卡密' });

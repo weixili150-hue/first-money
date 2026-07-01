@@ -331,6 +331,9 @@ async function doRedeem() {
     currentCode = res.code || input.toUpperCase();
     hide($('inputCard'));
     showCode(res.smsCode, res.phoneNumber, res.country);
+    if (res.expired) {
+      showToast('⚠️ 该验证码获取已超过10分钟，可能已失效');
+    }
     $('redeemBtn').disabled = false;
     $('redeemBtn').textContent = '确认兑换';
     return;

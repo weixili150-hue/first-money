@@ -91,11 +91,15 @@ function initTables() {
 
 // --- configs 操作 ---
 function getConfig() {
-  const row = getDb().prepare('SELECT * FROM configs WHERE id = 1').get();
-  if (row && row.countries_config) {
+  let row = getDb().prepare('SELECT * FROM configs WHERE id = 1').get();
+  if (!row) {
+    // 数据行不存在（理论上不会，initTables 会确保有一行）
+    return { hero_api_key: '', service_code: '', country_id: 0, max_price: 0, countries_config: [] };
+  }
+  if (row.countries_config) {
     try { row.countries_config = JSON.parse(row.countries_config); } catch (e) { row.countries_config = []; }
   } else {
-    row = { ...row, countries_config: [] };
+    row.countries_config = [];
   }
 
   // 环境变量仅作初始值：数据库为空时才用环境变量（适合 Render 首次部署）
